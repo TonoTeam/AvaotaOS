@@ -36,6 +36,16 @@ sudo bash build_all.sh \
 
 烧写整张镜像会覆盖目标介质；已有设备更新 App 时使用 `sudo apt install ./tono-canvas_VERSION_arm64.deb`，不要为更新 App 重刷系统。
 
+## 镜像体积
+
+Kiosk 在安装本次 App 后、计算容量前清理 APT 索引、下载包和二进制缓存，再在内核包安装结束后清理一次。此步骤也适用于旧的基础 rootfs 缓存。保留 apt、dpkg 状态和软件源；维护时先执行 `sudo apt update`。APT 的两个可再生成的二进制缓存默认关闭，索引仍会在 `apt update` 时重新下载。
+
+`scripts/trim-kiosk-rootfs.py` 仅接受带 `DESKTOP=kiosk` 标记的暂存根目录。它精简手册、Info、普通包文档及中英文以外的系统 gettext 翻译，保留包的 copyright、LICENSE、COPYING、NOTICE 及公共许可证，安装对应的 dpkg 路径过滤规则。英文/中文 gettext 翻译继续安装，Qt 翻译、WebEngine 语言包/资源、全部字体、拼音词库、多媒体、Mesa/LLVM、固件和内核模块均保留。此清理不处理用户目录、Wi-Fi 配置、SSH 密钥或应用身份；它用于构建工厂镜像，不作为已部署设备上的清理命令。
+
+Kiosk 根分区从 128 MiB 开始，保留前 16 MiB 的 BootROM/启动器区域，FAT 启动分区为 112 MiB。其他镜像类型继续使用原布局。容量按精简后的 rootfs、内核和固件大小计算，额外预留约 5%＋64 MiB 给文件系统元数据/日志，再预留至少 256 MiB 或内容的 10%（取较大者）用于首次启动前的维护，按 16 MiB 对齐。去掉旧的固定 1 GiB 加 20% 预留；ext4 保留日志，root 保留块比例从 5% 调整为 1%。
+
+构建结束检查 root 可用空间至少 256 MiB、boot 至少 32 MiB，不足则报错，不输出容量不足的镜像。首次启动仍由 `init-resize.service` 将根分区扩展到 SD 卡容量。精简减少镜像和烧录体积，不代表内存或启动时间按同样比例下降。恢复工具随镜像安装到 `/usr/local/sbin/tono-repair-board-index`。
+
 ## 启动与维护
 
 `tono-kiosk.service` 在 tty1 创建普通用户的 PAM/logind 会话，启动带 Xauthority 认证的 Xorg、无合成器的 Openbox、Fcitx5 和用户音频服务。启动命令为：
@@ -93,6 +103,7 @@ Kiosk 打包时默认移除 `earlycon`，使用 `quiet loglevel=3`，继续保�
 ```sh
 python3 tests/test_kiosk.py
 python3 tests/test_kiosk_board_index.py
+python3 tests/test_kiosk_size.py
 bash -n build_all.sh scripts/mkrootfs.sh scripts/pack.sh scripts/lib/kiosk.sh
 sudo bash scripts/verify-kiosk-image.sh /absolute/path/to/AvaotaOS-kiosk.img
 ```

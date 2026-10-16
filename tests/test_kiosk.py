@@ -58,6 +58,7 @@ class KioskTests(unittest.TestCase):
             fixture = base / "fixture"
             for name in ("etc", "usr/sbin", "dev", "proc", "sys", "tmp"):
                 (fixture / name).mkdir(parents=True, exist_ok=True)
+            (fixture / "etc/avaota-release").write_text("DESKTOP=kiosk\n")
             # Match mkrootfs: root children are archived, without a '.' entry.
             with tarfile.open(base / "rootfs-noble-kiosk.tar.gz", "w:gz") as archive:
                 for child in fixture.iterdir():
@@ -74,7 +75,7 @@ class KioskTests(unittest.TestCase):
                 printf '%s' "$KIOSK_STAGE"
             '''), TEST_WORKSPACE=str(base), APP_DEB=str(package))
             self.assertEqual(result.returncode, 0, result.stderr)
-            self.assertEqual(stat.S_IMODE(Path(result.stdout).stat().st_mode), 0o755)
+            self.assertEqual(stat.S_IMODE(Path(result.stdout.splitlines()[-1]).stat().st_mode), 0o755)
 
     def test_kiosk_uses_board_xorg_configuration_without_gdm(self):
         with tempfile.TemporaryDirectory() as temporary:
