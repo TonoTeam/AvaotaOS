@@ -53,6 +53,7 @@ systemctl status tono-kiosk.service
 journalctl -b -u tono-kiosk.service
 sudo systemctl stop tono-kiosk.service
 sudo apt install ./tono-canvas_VERSION_arm64.deb
+sudo sync
 sudo systemctl start tono-kiosk.service
 ```
 
@@ -62,9 +63,11 @@ sudo systemctl start tono-kiosk.service
 
 镜像显式安装 `polkitd`，将 kiosk 用户加入 `tono-network` 组，并安装 `49-tono-network.rules`。仅活动的本地会话可扫描、切换 Wi-Fi、控制连接和修改自己的网络配置；应用仍以普通用户运行，不依赖桌面认证窗口。密码经系统 D-Bus 直接交给 NetworkManager，由系统保存，应用不写入自身设置、命令行或日志。无线操作不修改现有 netplan 有线网络配置。
 
-2026-10-16，A1 kiosk 实机升级至 1.1.4，核实 App 会话的扫描、无线开关、连接控制和自身配置权限，并在页内列出真实热点。用户在设备上输入密码后确认连接成功；安装前后已有画板和 App 设置文件的 SHA-256 一致。企业认证、隐藏热点和无线重启重连未在本次验收中验证。
+2026-10-16，A1 kiosk 实机升级至 1.1.4，核实 App 会话的扫描、无线开关、连接控制和自身配置权限，并在页内列出真实热点。用户在设备上输入密码后确认连接成功；安装前后已有画板和 App 设置文件的 SHA-256 一致。同日完成系统文件恢复后的断电启动验证，App 自动显示，Wi-Fi 自动重连。企业认证与隐藏热点未在本次验收中验证。
 
 正常停止或关机时，先向 App 发送 SIGTERM，Qt 将它交给现有保存关闭流程；Xorg、音频和输入法保留至 App 退出，最多等待 90 秒。超时会记录错误再结束会话。异常崩溃、强制断电或保存失败不保证未保存笔迹可恢复；已保存的数据不由启动器删除。Fcitx5 初始配置含美式键盘和拼音，已有输入法配置不覆盖。
+
+如果重启后只有背光、App 未显示，按[黑屏排查与系统文件恢复](kiosk-recovery.md)先检查服务、用户组、应用及软件包数据库，并在修复后验证断电启动。
 
 ## 启动速度
 
@@ -89,6 +92,7 @@ Kiosk 打包时默认移除 `earlycon`，使用 `quiet loglevel=3`，继续保�
 
 ```sh
 python3 tests/test_kiosk.py
+python3 tests/test_kiosk_board_index.py
 bash -n build_all.sh scripts/mkrootfs.sh scripts/pack.sh scripts/lib/kiosk.sh
 sudo bash scripts/verify-kiosk-image.sh /absolute/path/to/AvaotaOS-kiosk.img
 ```
