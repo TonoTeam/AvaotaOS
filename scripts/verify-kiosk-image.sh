@@ -113,6 +113,10 @@ mount -t tmpfs -o mode=1777 tmpfs "$root/tmp"
 chroot "$root" /usr/sbin/runuser -u "$user" -- env \
     QT_QPA_PLATFORM=offscreen XDG_CACHE_HOME=/tmp/tono-verify-cache \
     "${app}" --software-rendering --version
+chroot "$root" /usr/sbin/runuser -u "$user" -- env \
+    QT_QPA_PLATFORM=offscreen XDG_CACHE_HOME=/tmp/tono-verify-cache \
+    "${app}" --help > "$verify_root/app-help.txt"
+grep -q -- '--opengl-es' "$verify_root/app-help.txt"
 umount "$root/tmp"
 audit=$(chroot "$root" dpkg --audit)
 test -z "$audit" || { printf '%s\n' "$audit" >&2; exit 1; }
