@@ -1,0 +1,33 @@
+[Unit]
+Description=Tono Canvas kiosk session
+After=systemd-user-sessions.service systemd-logind.service apparmor.service
+Wants=systemd-user-sessions.service systemd-logind.service
+Conflicts=getty@tty1.service
+StartLimitIntervalSec=60
+StartLimitBurst=5
+
+[Service]
+Type=simple
+User=avaota
+PAMName=login
+Environment=XDG_SESSION_TYPE=x11 XDG_SESSION_DESKTOP=tono-kiosk XDG_CURRENT_DESKTOP=Openbox
+Environment=XDG_SEAT=seat0 XDG_VTNR=1
+TTYPath=/dev/tty1
+StandardInput=tty
+StandardOutput=journal
+StandardError=journal
+TTYReset=yes
+TTYVHangup=yes
+TTYVTDisallocate=yes
+UtmpIdentifier=tty1
+UtmpMode=user
+ExecStart=/usr/local/libexec/tono-kiosk-start
+ExecStop=/usr/local/libexec/tono-kiosk-stop
+Restart=always
+RestartSec=5
+# ExecStop first asks the app to save. Only then may xinit stop Xorg.
+KillMode=mixed
+TimeoutStopSec=100
+
+[Install]
+WantedBy=multi-user.target

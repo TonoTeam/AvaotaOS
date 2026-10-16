@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+set -euo pipefail
+export XAUTHORITY="$XDG_RUNTIME_DIR/tono-kiosk/Xauthority"
+mkdir -p "$(dirname "$XAUTHORITY")"
+chmod 700 "$(dirname "$XAUTHORITY")"
+rm -f "$XDG_RUNTIME_DIR/tono-kiosk/app.pid"
+touch "$XAUTHORITY"
+chmod 600 "$XAUTHORITY"
+xauth -f "$XAUTHORITY" add :0 . "$(mcookie)"
+exec /usr/bin/xinit /usr/local/libexec/tono-kiosk-session -- \
+    /usr/lib/xorg/Xorg :0 vt1 -auth "$XAUTHORITY" -keeptty -nolisten tcp -noreset
