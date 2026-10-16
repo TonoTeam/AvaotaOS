@@ -80,7 +80,12 @@ grep -qx "Environment=XDG_RUNTIME_DIR=/run/user/$uid" \
 grep -q 'MatchDriver "sun4i-drm"' "$root/etc/X11/xorg.conf.d/20-avaota-display.conf"
 test ! -e "$root/etc/modules-load.d/avaota-wifi.conf"
 grep -qx 'ExecStart=/usr/sbin/modprobe aic8800_fdrv' "$root/etc/systemd/system/tono-wifi.service"
-grep -q 'Option "AccelMethod" "none"' "$root/etc/X11/xorg.conf.d/21-tono-software.conf"
+grep -q 'Option "AccelMethod" "none"' "$root/etc/X11/tono-kiosk-software/21-tono.conf"
+grep -q 'Option "AccelMethod" "glamor"' "$root/etc/X11/tono-kiosk-hardware/21-tono.conf"
+grep -qx 'TONO_RENDERER=auto' "$root/etc/default/tono-kiosk"
+grep -qx 'SupplementaryGroups=video render' "$root/etc/systemd/system/tono-kiosk.service"
+test -x "$root/usr/local/libexec/tono-gpu-probe"
+test "$(chroot "$root" dpkg-query -W -f='${db:Status-Status}' libgles2)" = installed
 test -d "$root/lib/firmware"
 test -e "$root/usr/lib/systemd/user/pipewire.socket"
 test -e "$root/usr/lib/systemd/user/pipewire-pulse.socket"
@@ -91,8 +96,8 @@ for script in start session stop; do
     test -x "$root/usr/local/libexec/tono-kiosk-$script"
     bash -n "$root/usr/local/libexec/tono-kiosk-$script"
 done
-grep -q 'tono-canvas --fullscreen --software-rendering --low-latency' \
-    "$root/usr/local/libexec/tono-kiosk-session"
+grep -q -- '--opengl-es' "$root/usr/local/libexec/tono-kiosk-session"
+grep -q -- '--software-rendering' "$root/usr/local/libexec/tono-kiosk-session"
 test -x "$root/usr/lib/xorg/Xorg"
 test -x "$root/usr/bin/xinit"
 test -x "$root/usr/bin/fcitx5"

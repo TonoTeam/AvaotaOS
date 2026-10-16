@@ -17,7 +17,7 @@ cd /tmp/tono-linux-build
 cpack -G DEB
 ```
 
-生成的 deb 使用 App 自身的依赖声明安装 Qt、WebEngine 和资源，不需要在目标系统编译应用。使用含 Linux `SIGTERM`/`SIGINT` 保存退出支持的版本。
+生成的 deb 使用 App 自身的依赖声明安装 Qt、WebEngine 和资源，不需要在目标系统编译应用。使用 1.1.5 或更新版本，包含 Linux 保存退出和 `--opengl-es` 支持；旧包会在构建入口被拒绝。
 
 ## 构建镜像
 
@@ -53,10 +53,20 @@ Kiosk 根分区从 128 MiB 开始，保留前 16 MiB 的 BootROM/启动器区域
 `tono-kiosk.service` 在 tty1 创建普通用户的 PAM/logind 会话，启动带 Xauthority 认证的 Xorg、无合成器的 Openbox、Fcitx5 和用户音频服务。启动命令为：
 
 ```sh
-QT_QPA_PLATFORM=xcb tono-canvas --fullscreen --software-rendering --low-latency
+QT_QPA_PLATFORM=xcb QT_XCB_GL_INTEGRATION=xcb_egl \
+  tono-canvas --fullscreen --opengl-es --low-latency
 ```
 
-App 的 X11/X Shape 原生墨迹路径保持可用。第一版固定软件 OpenGL；验证硬件加速时先记录此基线，再调整启动脚本。WebEngine 沙盒保持开启；镜像的单应用 AppArmor 配置允许 Chromium 使用用户命名空间，不改变全局策略。实机内核仍须支持 Chromium 使用的命名空间和 seccomp。
+App 的 X11/X Shape 原生墨迹路径保持可用。A1 的 Mesa Panfrost 提供 Mali-G57 GLES 3.1；Quick 与 WebEngine 显式使用 GLES 3/EGL，共用硬件纹理。加速覆盖窗口/纹理/HTML/WebGL 合成，原有 C 引擎笔刷计算和原生低延迟 RasterSurface 仍由 CPU 执行，不把它们描述为 GPU 笔刷。
+
+`/etc/default/tono-kiosk` 默认 `TONO_RENDERER=auto`。启动前以服务用户执行最长 8 秒的 GLES 3 着色器和像素读回测试，仅在确认 Mali-G57/Panfrost 硬件后选择 glamor Xorg 配置和 `--opengl-es`。探测失败选择完整的软件 Xorg 配置及原有 `--software-rendering`；硬件 Xorg 或应用启动异常退出时，同次会话再尝试一次软件模式。正常保存退出不触发这次降级。不能检测仍存活但卡住的驱动；这种情况可经 SSH 强制软件模式：
+
+```sh
+sudo sed -i 's/^TONO_RENDERER=.*/TONO_RENDERER=software/' /etc/default/tono-kiosk
+sudo systemctl restart tono-kiosk
+```
+
+恢复自动模式将值改回 `auto`；`hardware` 用于诊断，跳过探测且不自动降级。配置错误直接报错。两套只读 Xorg 配置位于 `/etc/X11/tono-kiosk-{hardware,software}`，均指定 sun4i-drm 为主显示控制器，不依赖 card 编号。`tono-kiosk.service` 的 `SupplementaryGroups=video render` 仅赋予图形会话 DRM 访问权限；rootless Xorg 必须能重新打开主 DRM 节点才能为 DRI3 客户端传递认证 fd。默认用户的全局组成员不增加这些权限。WebEngine 沙盒保持开启；镜像的单应用 AppArmor 配置允许 Chromium 使用用户命名空间，不改变全局策略。实机内核仍须支持 Chromium 使用的命名空间和 seccomp。
 
 Openbox 保证文件对话框、输入法候选框和全屏之间的焦点交接；不启动面板或桌面。保留 F11、Escape 和 Alt+F4 等开发操作。App 退出会重启整个图形会话；一分钟内连续失败五次会停止重试，可从 SSH 查看日志并重启服务。tty1 不运行登录提示，串口和其他终端继续可用。
 
@@ -85,7 +95,7 @@ sudo systemctl start tono-kiosk.service
 
 Kiosk 打包时默认移除 `earlycon`，使用 `quiet loglevel=3`，继续保留串口控制台与登录。内核消息仍可通过 `dmesg` 和 `journalctl -b -k` 读取；日志级别只减少同步输出到控制台的内容，见[内核日志说明](https://cdn.kernel.org/doc/html/latest/core-api/printk-basics.html)。需要完整串口调试时，可在 `/boot/extlinux/extlinux.conf` 的 `append` 行恢复原来的 `earlycon` 和 `loglevel=8`。
 
-`tono-wifi.service` 在 `basic.target` 之后加载 AIC8800，与后续启动任务并行，避免阻塞早期 `systemd-modules-load.service`；网络管理与无线功能继续保留。用户音频服务异步启动。软件渲染基线中的 Xorg 显式设置 `AccelMethod=none`，跳过每次启动都会失败的 glamor 探测；此设置仅用于 kiosk，验证 GPU 加速时需同时调整 `21-tono-software.conf` 和应用渲染参数。
+`tono-wifi.service` 在 `basic.target` 之后加载 AIC8800，与后续启动任务并行，避免阻塞早期 `systemd-modules-load.service`；网络管理与无线功能继续保留。用户音频服务异步启动。硬件模式使用 glamor，软件恢复模式显式设置 `AccelMethod=none`；由同一会话入口同时选择 Xorg 与 App 的渲染方式。
 
 2026-10-16，在同一 A1 4GB、同一 SD 卡、同一 Tono Canvas 1.1.3 和 2560×1440 输出上，通过两次正常重启对比：
 
@@ -106,6 +116,7 @@ Kiosk 打包时默认移除 `earlycon`，使用 `quiet loglevel=3`，继续保�
 python3 tests/test_kiosk.py
 python3 tests/test_kiosk_board_index.py
 python3 tests/test_kiosk_size.py
+python3 tests/test_kiosk_gpu.py
 bash -n build_all.sh scripts/mkrootfs.sh scripts/pack.sh scripts/lib/kiosk.sh
 sudo bash scripts/verify-kiosk-image.sh /absolute/path/to/AvaotaOS-kiosk.img
 ```

@@ -7,5 +7,35 @@ rm -f "$XDG_RUNTIME_DIR/tono-kiosk/app.pid"
 touch "$XAUTHORITY"
 chmod 600 "$XAUTHORITY"
 xauth -f "$XAUTHORITY" add :0 . "$(mcookie)"
-exec /usr/bin/xinit /usr/local/libexec/tono-kiosk-session -- \
-    /usr/lib/xorg/Xorg :0 vt1 -auth "$XAUTHORITY" -keeptty -nolisten tcp -noreset
+# Probe as the same ordinary user and groups as Xorg and the app. A bounded
+# shader test rejects llvmpipe and broken GLES before choosing the display path.
+requested=${TONO_RENDERER:-auto}
+case "$requested" in
+    auto)
+        TONO_RENDERER=software
+        if timeout 8 /usr/local/libexec/tono-gpu-probe; then
+            TONO_RENDERER=hardware
+        else
+            echo "Tono GPU probe failed; selecting software rendering." >&2
+        fi ;;
+    hardware|software) TONO_RENDERER=$requested ;;
+    *) echo "Invalid TONO_RENDERER: $requested" >&2; exit 2 ;;
+esac
+export TONO_RENDERER
+trap 'exit 0' TERM INT
+start_display() {
+    echo "Starting Tono Canvas: renderer=$TONO_RENDERER" >&2
+    # Relative names resolve under /etc/X11 and are allowed for rootless Xorg.
+    /usr/bin/xinit /usr/local/libexec/tono-kiosk-session -- \
+        /usr/lib/xorg/Xorg :0 vt1 -configdir "tono-kiosk-$TONO_RENDERER" \
+        -auth "$XAUTHORITY" -keeptty -nolisten tcp -noreset
+}
+status=0
+start_display || status=$?
+if [[ $requested == auto && $TONO_RENDERER == hardware && $status != 0 ]]; then
+    echo "Hardware session failed ($status); retrying with software rendering." >&2
+    export TONO_RENDERER=software
+    start_display
+else
+    exit "$status"
+fi

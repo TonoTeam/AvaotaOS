@@ -4,7 +4,7 @@ initramfs-tools linux-base kmod udev e2fsprogs dosfstools fdisk parted mmc-utils
 netplan.io network-manager polkitd wpasupplicant wireless-regdb iw rfkill openssh-server
 curl wget iputils-ping iproute2 ethtool usbutils procps less nano logrotate
 xserver-xorg-core xserver-xorg-input-libinput xinit xauth x11-xserver-utils openbox
-libgl1-mesa-dri libegl-mesa0 libglx-mesa0 libgbm1
+libgles2 libgl1-mesa-dri libegl-mesa0 libglx-mesa0 libgbm1
 pipewire pipewire-alsa pipewire-pulse wireplumber alsa-utils libasound2-plugins
 gstreamer1.0-plugins-good qt6-qpa-plugins fonts-noto-cjk
 fcitx5 fcitx5-modules fcitx5-pinyin fcitx5-frontend-qt6

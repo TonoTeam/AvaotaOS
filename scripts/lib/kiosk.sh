@@ -28,6 +28,10 @@ validate_kiosk_app() {
         echo "The application package must be tono-canvas, Architecture: arm64." >&2
         return 2
     fi
+    if ! dpkg --compare-versions "$(dpkg-deb -f "$APP_DEB" Version)" ge 1.1.5; then
+        echo "The GPU kiosk profile requires tono-canvas >= 1.1.5 (--opengl-es)." >&2
+        return 2
+    fi
 }
 
 kiosk_rootfs_signature() {
@@ -150,11 +154,16 @@ install_kiosk_session() {
         echo "kiosk requires a non-root user with a /home/<user> home." >&2
         return 2
     fi
-    install -d "$root/usr/local/libexec" "$root/usr/local/sbin" \
+    install -d "$root/etc/default" "$root/usr/local/libexec" "$root/usr/local/sbin" \
         "$root/usr/local/share/doc/tono-kiosk" "$root/etc/systemd/system/tono-kiosk.service.d" \
         "$root/etc/apparmor.d" "$root/etc/xdg/tono-kiosk" "$root/etc/polkit-1/rules.d"
     install -m 755 "$repo"/target/services/tono-kiosk/tono-kiosk-{start,session,stop} \
         "$root/usr/local/libexec/"
+    install -m 755 "$repo/target/services/tono-kiosk/tono-gpu-probe" "$root/usr/local/libexec/"
+    if [[ ! -e $root/etc/default/tono-kiosk ]]; then
+        printf '# auto probes GLES; software is the recovery mode.\nTONO_RENDERER=auto\n' \
+            > "$root/etc/default/tono-kiosk"
+    fi
     install -m 755 "$repo/scripts/repair-kiosk-board-index.py" \
         "$root/usr/local/sbin/tono-repair-board-index"
     install -m 644 "$repo/doc/kiosk-recovery.md" \
