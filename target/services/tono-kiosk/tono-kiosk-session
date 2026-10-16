@@ -19,7 +19,12 @@ fcitx5 &
 ime_pid=$!
 xset s off
 xset -dpms || true
-tono-canvas --fullscreen --software-rendering --low-latency &
+render_args=(--software-rendering)
+if [[ ${TONO_RENDERER:-software} == hardware ]]; then
+    render_args=(--opengl-es)
+    export QT_XCB_GL_INTEGRATION=xcb_egl
+fi
+tono-canvas --fullscreen --low-latency "${render_args[@]}" &
 app_pid=$!
 printf '%s\n' "$app_pid" > "$session_dir/app.pid"
 wait "$app_pid"

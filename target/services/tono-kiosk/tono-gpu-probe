@@ -1,0 +1,129 @@
+#!/usr/bin/env python3
+"""A1 hardware preflight: GLES 3 shader/pixel test, no display or user data."""
+# SPDX-License-Identifier: GPL-3.0
+import ctypes as C
+import json
+
+egl = C.CDLL('libEGL.so.1')
+gl = C.CDLL('libGLESv2.so.2')
+P = C.c_void_p
+I = C.c_int
+U = C.c_uint
+
+
+def function(lib, name, result, *args):
+    call = getattr(lib, name)
+    call.restype, call.argtypes = result, list(args)
+    return call
+
+
+function(egl, 'eglGetPlatformDisplay', P, U, P, P)
+function(egl, 'eglInitialize', U, P, C.POINTER(I), C.POINTER(I))
+function(egl, 'eglBindAPI', U, U)
+function(egl, 'eglChooseConfig', U, P, C.POINTER(I), C.POINTER(P), I, C.POINTER(I))
+function(egl, 'eglCreatePbufferSurface', P, P, P, C.POINTER(I))
+function(egl, 'eglCreateContext', P, P, P, P, C.POINTER(I))
+function(egl, 'eglMakeCurrent', U, P, P, P, P)
+function(egl, 'eglGetError', U)
+function(egl, 'eglDestroySurface', U, P, P)
+function(egl, 'eglDestroyContext', U, P, P)
+function(egl, 'eglTerminate', U, P)
+function(gl, 'glGetString', C.c_char_p, U)
+function(gl, 'glCreateShader', U, U)
+function(gl, 'glShaderSource', None, U, I, C.POINTER(C.c_char_p), C.POINTER(I))
+function(gl, 'glCompileShader', None, U)
+function(gl, 'glGetShaderiv', None, U, U, C.POINTER(I))
+function(gl, 'glGetShaderInfoLog', None, U, I, C.POINTER(I), P)
+function(gl, 'glCreateProgram', U)
+function(gl, 'glAttachShader', None, U, U)
+function(gl, 'glLinkProgram', None, U)
+function(gl, 'glGetProgramiv', None, U, U, C.POINTER(I))
+function(gl, 'glUseProgram', None, U)
+function(gl, 'glViewport', None, I, I, I, I)
+function(gl, 'glDrawArrays', None, U, I, I)
+function(gl, 'glFinish', None)
+function(gl, 'glReadPixels', None, I, I, I, I, U, U, P)
+function(gl, 'glGetError', U)
+function(gl, 'glDeleteShader', None, U)
+function(gl, 'glDeleteProgram', None, U)
+
+
+def checked(ok, name):
+    if not ok:
+        raise RuntimeError(name + ': EGL error ' + hex(egl.eglGetError()))
+
+
+def shader(kind, source):
+    handle = gl.glCreateShader(kind)
+    text = C.c_char_p(source)
+    gl.glShaderSource(handle, 1, C.byref(text), None)
+    gl.glCompileShader(handle)
+    status = I()
+    gl.glGetShaderiv(handle, 0x8B81, C.byref(status))
+    if not status.value:
+        log = C.create_string_buffer(2048)
+        gl.glGetShaderInfoLog(handle, len(log), None, log)
+        raise RuntimeError(log.value.decode())
+    return handle
+
+
+display = egl.eglGetPlatformDisplay(0x31DD, None, None)
+surface = context = None
+shaders = []
+program = 0
+try:
+    major, minor = I(), I()
+    checked(egl.eglInitialize(display, C.byref(major), C.byref(minor)), 'initialize')
+    checked(egl.eglBindAPI(0x30A0), 'bind GLES')
+    attributes = (I * 13)(0x3033, 1, 0x3040, 0x40, 0x3024, 8, 0x3023, 8, 0x3022, 8, 0x3021, 8, 0x3038)
+    config, count = P(), I()
+    checked(egl.eglChooseConfig(display, attributes, C.byref(config), 1, C.byref(count)) and count.value, 'choose ES3 config')
+    surface = egl.eglCreatePbufferSurface(display, config, (I * 5)(0x3057, 4, 0x3056, 4, 0x3038))
+    checked(surface, 'create pbuffer')
+    context = egl.eglCreateContext(display, config, None, (I * 3)(0x3098, 3, 0x3038))
+    checked(context, 'create GLES3 context')
+    checked(egl.eglMakeCurrent(display, surface, surface, context), 'make current')
+    result = {key: gl.glGetString(value).decode() for key, value in (
+        ('vendor', 0x1F00), ('renderer', 0x1F01), ('version', 0x1F02), ('glsl', 0x8B8C))}
+    vertex = shader(0x8B31, b'''#version 300 es
+        const vec2 p[3]=vec2[3](vec2(-1,-1),vec2(3,-1),vec2(-1,3));
+        void main(){gl_Position=vec4(p[gl_VertexID],0,1);}''')
+    shaders.append(vertex)
+    fragment = shader(0x8B30, b'''#version 300 es
+        precision highp float; out vec4 color;
+        void main(){color=vec4(0.25,0.5,0.75,1.0);}''')
+    shaders.append(fragment)
+    program = gl.glCreateProgram()
+    for handle in shaders:
+        gl.glAttachShader(program, handle)
+    gl.glLinkProgram(program)
+    status = I()
+    gl.glGetProgramiv(program, 0x8B82, C.byref(status))
+    if not status.value:
+        raise RuntimeError('ES3 program link failed')
+    gl.glUseProgram(program)
+    gl.glViewport(0, 0, 4, 4)
+    gl.glDrawArrays(4, 0, 3)
+    gl.glFinish()
+    pixels = (C.c_ubyte * 64)()
+    gl.glReadPixels(0, 0, 4, 4, 0x1908, 0x1401, pixels)
+    error = gl.glGetError()
+    if error or any(abs(value - (64, 128, 191, 255)[index % 4]) > 2 for index, value in enumerate(pixels)):
+        raise RuntimeError('Incorrect GPU shader pixels: ' + str(list(pixels)) + ' GL error ' + hex(error))
+    result['pixel_test'] = 'passed'
+    result['hardware'] = 'Mali-G57' in result['renderer'] and 'Panfrost' in result['renderer']
+    print(json.dumps(result))
+    if not result['hardware']:
+        raise RuntimeError('A1 Mali-G57 hardware renderer required')
+finally:
+    if program:
+        gl.glDeleteProgram(program)
+    for handle in shaders:
+        gl.glDeleteShader(handle)
+    if display:
+        egl.eglMakeCurrent(display, None, None, None)
+        if context:
+            egl.eglDestroyContext(display, context)
+        if surface:
+            egl.eglDestroySurface(display, surface)
+        egl.eglTerminate(display)

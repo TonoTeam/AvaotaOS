@@ -87,7 +87,7 @@ class KioskTests(unittest.TestCase):
                           (root / "etc/X11/xorg.conf.d/20-avaota-display.conf").read_text())
             self.assertFalse((root / "etc/gdm3").exists())
             self.assertIn('Option "AccelMethod" "none"',
-                          (root / "etc/X11/xorg.conf.d/21-tono-software.conf").read_text())
+                          (root / "etc/X11/tono-kiosk-software/21-tono.conf").read_text())
 
     def test_wifi_remains_available_without_blocking_early_module_loading(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -183,12 +183,14 @@ class KioskTests(unittest.TestCase):
             base = Path(temporary)
             control = base / "package/DEBIAN/control"
             control.parent.mkdir(parents=True)
-            for name, architecture, accepted in (
-                ("tono-canvas", "arm64", True), ("tono-canvas", "amd64", False),
-                ("other-app", "arm64", False),
+            for name, architecture, version, accepted in (
+                ("tono-canvas", "arm64", "1.1.5", True),
+                ("tono-canvas", "arm64", "1.1.4", False),
+                ("tono-canvas", "amd64", "1.1.5", False),
+                ("other-app", "arm64", "1.1.5", False),
             ):
                 control.write_text(
-                    f"Package: {name}\nVersion: 1.0\nArchitecture: {architecture}\n"
+                    f"Package: {name}\nVersion: {version}\nArchitecture: {architecture}\n"
                     "Maintainer: Test <test@example.invalid>\nDescription: validation fixture\n"
                 )
                 package = base / "app package.deb"
