@@ -132,7 +132,7 @@ install_kiosk_session() {
         return 2
     fi
     install -d "$root/usr/local/libexec" "$root/etc/systemd/system/tono-kiosk.service.d" \
-        "$root/etc/apparmor.d" "$root/etc/xdg/tono-kiosk"
+        "$root/etc/apparmor.d" "$root/etc/xdg/tono-kiosk" "$root/etc/polkit-1/rules.d"
     install -m 755 "$repo"/target/services/tono-kiosk/tono-kiosk-{start,session,stop} \
         "$root/usr/local/libexec/"
     install -m 644 "$repo/target/services/tono-kiosk/tono-kiosk.service" "$root/etc/systemd/system/"
@@ -140,6 +140,9 @@ install_kiosk_session() {
     install -m 644 "$repo/target/services/tono-kiosk/tono-canvas.apparmor" \
         "$root/etc/apparmor.d/tono-canvas"
     install -m 644 "$repo/target/services/tono-kiosk/openbox.xml" "$root/etc/xdg/tono-kiosk/"
+    install -m 644 "$repo/target/services/tono-kiosk/49-tono-network.rules" "$root/etc/polkit-1/rules.d/"
+    chroot "$root" groupadd --system --force tono-network
+    chroot "$root" usermod --append --groups tono-network "$SYS_USER"
     cat > "$root/etc/systemd/system/tono-kiosk.service.d/user.conf" <<EOF
 [Unit]
 Wants=user@${uid}.service
