@@ -2,6 +2,9 @@
 
 <a href="#avaota-build"><img src="./doc/pics/main.png" alt="main.png" width="100%"></a>
 
+This is the [TonoTeam/AvaotaOS](https://github.com/TonoTeam/AvaotaOS) fork of
+[AvaotaSBC/AvaotaOS](https://github.com/AvaotaSBC/AvaotaOS), with Tono Canvas kiosk integration for Avaota A1.
+
 ## Info
 
 ```plaintext
@@ -14,7 +17,7 @@ password: avaota
 
 ## Prebuilt Download
 
-You can download prebuilt images from the [releases](https://github.com/AvaotaSBC/AvaotaOS/releases) section.
+You can download published images from the [releases](https://github.com/TonoTeam/AvaotaOS/releases) section.
 
 The format of the prebuilt image file is `UBUNTU_VERSION-SYS_TYPE-ARCH-BOARD.img.xz`.
 
@@ -23,7 +26,7 @@ The format of the prebuilt image file is `UBUNTU_VERSION-SYS_TYPE-ARCH-BOARD.img
 1. Clone the AvaotaOS repository:
 
 ```plaintext
-git clone --depth=1 https://github.com/AvaotaSBC/AvaotaOS && cd AvaotaOS
+git clone --depth=1 https://github.com/TonoTeam/AvaotaOS.git && cd AvaotaOS
 ```
 
 2. Run the build script:
@@ -75,6 +78,9 @@ sudo ./build_all.sh \
   3. gnome
   4. kde
   5. lxqt
+  6. kiosk (Avaota A1 + Ubuntu 24.04; requires `--app-deb`)
+
+Tono Canvas 的开机全屏精简镜像、ARM64 deb 构建、更新和验证步骤见 [单应用镜像](doc/kiosk.md)。
 
 - `SYS_USER`: (default: avaota)
 

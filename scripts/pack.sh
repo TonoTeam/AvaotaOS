@@ -15,6 +15,7 @@ The target sdcard.img will be generated in the build folder of the directory whe
 Options: 
   -b,  -board BOARD                   The target board.
   -t, --type ROOTFS_TYPE              The rootfs type.
+      --app-deb FILE                 Tono Canvas ARM64 deb (required for kiosk).
   -u, --user SYS_USER                 The normal user of rootfs.
   -p, --password SYS_PASSWORD         The password of user.
   -s, --supassword ROOT_PASSWORD      The password of root.
@@ -34,6 +35,8 @@ default_param() {
     SYS_USER=avaota
     SYS_PASSWORD=avaota
     ROOT_PASSWORD=avaota
+    APP_DEB=""
+    KIOSK_STAGE=""
 }
 
 parseargs()
@@ -45,7 +48,7 @@ parseargs()
     while [ "x$#" != "x0" ];
     do
         if [ "x$1" == "x-h" -o "x$1" == "x--help" ]; then
-            return 1
+            help 0
         elif [ "x$1" == "x" ]; then
             shift
         elif [ "x$1" == "x-b" -o "x$1" == "x--board" ]; then
@@ -60,6 +63,13 @@ parseargs()
             VERSION=`echo $2`
             shift
             shift
+        elif [ "$1" == "--app-deb" ]; then
+            if [[ $# -lt 2 || -z $2 || $2 == -* ]]; then
+                echo "--app-deb requires a file path." >&2
+                return 2
+            fi
+            APP_DEB=$2
+            shift 2
         elif [ "x$1" == "x-u" -o "x$1" == "x--user" ]; then
             SYS_USER=`echo $2`
             shift
@@ -81,6 +91,11 @@ parseargs()
 
 UMOUNT_ALL(){
     set +e
+    # Never remove staging directories while their virtual filesystems are mounted.
+    if ! cleanup_kiosk_rootfs; then
+        echo "Could not unmount kiosk staging rootfs: $KIOSK_STAGE" >&2
+        return 1
+    fi
     
     if grep -q "${workspace}/rootfs_dir/boot " /proc/mounts ; then
         umount ${workspace}/rootfs_dir/boot
@@ -131,6 +146,10 @@ setup_wifi(){
     :
 }
 
+setup_boot(){
+    :
+}
+
 pack_sdcard()
 {
 
@@ -139,8 +158,14 @@ pack_sdcard()
     if [ -d ${workspace}/rootfs_dir ];then rm -rf ${workspace}/rootfs_dir; fi
     
     trap 'UMOUNT_ALL' EXIT
-    
-    rootfs_size=$(tar --numeric-owner -tvzf "${workspace}/rootfs-${VERSION}-${TYPE}.tar.gz" | awk '{size += $3} END {printf "%.0f", size / 1048576 + 1}')
+
+    if [[ $TYPE == kiosk ]]; then
+        prepare_kiosk_rootfs "$workspace"
+        # Size the image after apt has installed WebEngine and all app dependencies.
+        rootfs_size=$(du -sm "$KIOSK_STAGE" | cut -f1)
+    else
+        rootfs_size=$(tar --numeric-owner -tvzf "${workspace}/rootfs-${VERSION}-${TYPE}.tar.gz" | awk '{size += $3} END {printf "%.0f", size / 1048576 + 1}')
+    fi
     kernel_size=$(du -sm "${workspace}/deb-data" | cut -f 1)
     img_size=$((rootfs_size + rootfs_size / 5 + kernel_size + BOOT_SIZE + 1024))
     
@@ -164,7 +189,12 @@ pack_sdcard()
     mkdir ${workspace}/rootfs_dir
     mount ${rootpart} ${workspace}/rootfs_dir
     
-    tar -zxvf ${workspace}/rootfs-${VERSION}-${TYPE}.tar.gz -C ${workspace}/rootfs_dir
+    if [[ $TYPE == kiosk ]]; then
+        cp -a "$KIOSK_STAGE/." "${workspace}/rootfs_dir/"
+        cleanup_kiosk_rootfs
+    else
+        tar -zxvf ${workspace}/rootfs-${VERSION}-${TYPE}.tar.gz -C ${workspace}/rootfs_dir
+    fi
     
     rm -f ${workspace}/rootfs_dir/root/.bash_history
     
@@ -195,6 +225,11 @@ EOF
     # Apply board settings even when reusing a cached rootfs archive.
     ROOTFS="${workspace}/rootfs_dir" setup_display
     ROOTFS="${workspace}/rootfs_dir" setup_wifi
+    ROOTFS="${workspace}/rootfs_dir" setup_boot
+    if [[ $TYPE == kiosk ]]; then
+        install_kiosk_session "${workspace}/rootfs_dir" "${workspace}/.."
+        configure_kiosk_boot "${workspace}/rootfs_dir"
+    fi
 
     if [ -f "${workspace}/rootfs_dir/usr/lib/systemd/system/systemd-resolved.service" ]; then
         ln -sfn /run/systemd/resolve/stub-resolv.conf "${workspace}/rootfs_dir/etc/resolv.conf"
@@ -227,6 +262,9 @@ default_param
 parseargs "$@" || help $?
 
 source ../boards/${BOARD}.conf
+source ../scripts/lib/kiosk.sh
+validate_kiosk_profile
+validate_kiosk_app
 source ../scripts/lib/bootloader/bootloader-${BL_CONFIG}.sh
 
 OFFSET=16

@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+set -euo pipefail
+export QT_QPA_PLATFORM=xcb QT_IM_MODULE=fcitx GTK_IM_MODULE=fcitx XMODIFIERS=@im=fcitx
+export LANG="${LANG:-C.UTF-8}"
+session_dir="$XDG_RUNTIME_DIR/tono-kiosk"
+app_pid="" wm_pid="" ime_pid=""
+cleanup() {
+    rm -f "$session_dir/app.pid"
+    [[ -z $ime_pid ]] || kill "$ime_pid" 2>/dev/null || true
+    [[ -z $wm_pid ]] || kill "$wm_pid" 2>/dev/null || true
+}
+trap cleanup EXIT
+# These services share the user's regular D-Bus and runtime directory.
+systemctl --user import-environment DISPLAY XAUTHORITY XDG_CURRENT_DESKTOP QT_IM_MODULE XMODIFIERS
+systemctl --user start --no-block pipewire.socket pipewire-pulse.socket wireplumber.service
+openbox --config-file /etc/xdg/tono-kiosk/openbox.xml &
+wm_pid=$!
+fcitx5 &
+ime_pid=$!
+xset s off
+xset -dpms || true
+tono-canvas --fullscreen --software-rendering --low-latency &
+app_pid=$!
+printf '%s\n' "$app_pid" > "$session_dir/app.pid"
+wait "$app_pid"

@@ -1,0 +1,8 @@
+abi <abi/4.0>,
+include <tunables/global>
+
+# Allow Chromium's user-namespace sandbox on Ubuntu 24.04 without changing
+# the global unprivileged-userns policy. Other access retains desktop defaults.
+profile tono-canvas /usr/{,local/}bin/tono-canvas flags=(unconfined) {
+    userns,
+}

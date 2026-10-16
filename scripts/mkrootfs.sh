@@ -18,7 +18,7 @@ Options:
   -r, --rootfs ROOTFS_DIR          The directory name of rootfs rootfs.
   -v, --version ROOTFS_VER         The version of ubuntu/debian.
   -b, --board BOARD                The target board.
-  -t, --type ROOTFS_TYPE           The type of rootfs: cli, xfce, gnome, kde.
+  -t, --type ROOTFS_TYPE           The rootfs: cli, xfce, gnome, kde, lxqt, kiosk.
   -h, --help                       Show command help.
 "
 
@@ -49,7 +49,7 @@ parseargs()
     while [ "x$#" != "x0" ];
     do
         if [ "x$1" == "x-h" -o "x$1" == "x--help" ]; then
-            return 1
+            help 0
         elif [ "x$1" == "x" ]; then
             shift
         elif [ "x$1" == "x-m" -o "x$1" == "x--mirror" ]; then
@@ -103,10 +103,18 @@ run_debootstrap(){
                   'deb ${MIRROR} ${VERSION}-updates main contrib non-free non-free-firmware'"
     fi
     
-    BASE_PKGS=$(cat ../os/${VERSION}/base-packages.list)
+    local bootstrap_options=()
+    if [[ ${TYPE} == kiosk ]]; then
+        BASE_PKGS=$(cat ../os/noble/kiosk-packages.list)
+        bootstrap_options=(--variant=minbase
+            --aptopt='APT::Install-Recommends "false"'
+            --aptopt='APT::Install-Suggests "false"')
+    else
+        BASE_PKGS=$(cat ../os/${VERSION}/base-packages.list)
+    fi
     EXT_PKGS=""
     
-    if [ "${TYPE}" != "cli" ];then
+    if [[ ${TYPE} != cli && ${TYPE} != kiosk ]];then
         echo "Build desktop image."
         EXT_PKGS=$(cat ../os/${VERSION}/${TYPE}-packages.list)
     fi
@@ -120,12 +128,14 @@ run_debootstrap(){
 
     if [ "${ARCH}" == "arm64" ];then
         sudo mmdebstrap --architectures=arm64 \
+        "${bootstrap_options[@]}" \
         --include="${PACKAGES}" \
         ${VERSION} ${ROOTFS} \
         "deb ${MIRROR} ${VERSION} ${LIST}" \
         "deb ${MIRROR} ${VERSION}-updates ${LIST}"
     elif [ "${ARCH}" == "arm" ];then
         sudo mmdebstrap --architectures=armhf \
+        "${bootstrap_options[@]}" \
         --include="${PACKAGES}" \
         ${VERSION} ${ROOTFS} \
         "deb ${MIRROR} ${VERSION} ${LIST}" \
@@ -268,6 +278,8 @@ default_param
 parseargs "$@" || help $?
 
 source ../boards/${BOARD}.conf
+source ../scripts/lib/kiosk.sh
+validate_kiosk_profile
 source ${workspace}/../scripts/lib/packages/useroverlay-deb.sh
 
 # TODO: download rootfs from Syter's server

@@ -17,7 +17,8 @@ Options:
   -m, --mirror MIRROR_ADDR            The URL/path of debian/ubuntu mirror address.
   -v, --version UBUNTU_VER            The version of ubuntu.
   -a, --arch ARCH                     The arch of ubuntu.
-  -t, --type ROOTFS_TYPE              The type of rootfs: cli, xfce, gnome, kde.
+  -t, --type ROOTFS_TYPE              The rootfs: cli, xfce, gnome, kde, lxqt, kiosk.
+      --app-deb FILE                 Tono Canvas ARM64 deb (required for kiosk).
   -k, --kernelmenuconfig              If run kernel menuconfig.
   -g, --kerneltarget                  The kernel target.
   -u, --user SYS_USER                 The normal user of rootfs.
@@ -50,6 +51,7 @@ default_param() {
     LOCAL=no
     KERNEL_ONLY=none
     USE_CCACHE=no
+    APP_DEB=""
 }
 
 parseargs()
@@ -62,7 +64,7 @@ parseargs()
     while [ "x$#" != "x0" ];
     do
         if [ "x$1" == "x-h" -o "x$1" == "x--help" ]; then
-            return 1
+            help 0
         elif [ "x$1" == "x" ]; then
             shift
         elif [ "x$1" == "x-b" -o "x$1" == "x--board" ]; then
@@ -81,6 +83,13 @@ parseargs()
             TYPE=`echo $2`
             shift
             shift
+        elif [ "$1" == "--app-deb" ]; then
+            if [[ $# -lt 2 || -z $2 || $2 == -* ]]; then
+                echo "--app-deb requires a file path." >&2
+                return 2
+            fi
+            APP_DEB=$2
+            shift 2
         elif [ "x$1" == "x-u" -o "x$1" == "x--user" ]; then
             SYS_USER=`echo $2`
             shift
@@ -167,6 +176,7 @@ input_box(){
             xfce "XFCE Desktop" \
             kde "Kde Desktop" \
             lxqt "LXQT Desktop" \
+            kiosk "Tono Canvas (A1 / Ubuntu 24.04, requires --app-deb)" \
             2> $temp
         if [ $? == 1 ];then
           exit 2
@@ -309,6 +319,7 @@ print_args(){
     echo "| VERSION=${VERSION}"
     echo "| ARCH=${ARCH}"
     echo "| TYPE=${TYPE}"
+    printf '| APP_DEB=%s\n' "$APP_DEB"
     echo "| SYS_USER=${SYS_USER}"
     echo "| SYS_PASSWORD=${SYS_PASSWORD}"
     echo "| ROOT_PASSWORD=${ROOT_PASSWORD}"
@@ -325,18 +336,34 @@ print_args(){
     echo "+-------------------------------"
     echo "You can run the following command at the next time:"
     echo "sudo bash build_all.sh -b ${BOARD} -m ${MIRROR} -v ${VERSION} -t ${TYPE} -u ${SYS_USER} -p ${SYS_PASSWORD} -s ${ROOT_PASSWORD} -k ${KERNEL_MENUCONFIG} -g ${KERNEL_TARGET} -l ${LOCAL} -i ${GITHUB_MIRROR} -o ${KERNEL_ONLY} -e ${USE_CCACHE}"
+    if [[ -n $APP_DEB ]]; then printf 'Append: --app-deb %q\n' "$APP_DEB"; fi
     echo "--------------------------------"
 }
-
-sudo apt-get install gcc-arm-none-eabi cmake build-essential gcc-aarch64-linux-gnu mtools qemu-user-static bc pkg-config dialog -y
-sudo apt install mmdebstrap ubuntu-keyring debian-keyring automake autoconf gcc make pixz libconfuse2 libconfuse-common libconfuse-dev -y
 
 EXTRA_ARGS=no
 default_param
 parseargs "$@" || help $?
+if [[ $(uname -s) != Linux ]]; then
+    echo "Build images on Linux; Ubuntu 24.04 is recommended." >&2
+    exit 2
+fi
+source scripts/lib/kiosk.sh
+# Fail fully specified kiosk commands before installing build dependencies.
+if [[ $TYPE == kiosk && $BOARD != none && $VERSION != none ]]; then
+    validate_kiosk_profile
+    if [[ $KERNEL_ONLY != yes ]]; then validate_kiosk_app; fi
+fi
+
+sudo apt-get install gcc-arm-none-eabi cmake build-essential gcc-aarch64-linux-gnu mtools qemu-user-static bc pkg-config dialog device-tree-compiler -y
+sudo apt install mmdebstrap ubuntu-keyring debian-keyring automake autoconf gcc make pixz libconfuse2 libconfuse-common libconfuse-dev -y
 
 input_box
+validate_kiosk_profile
+if [[ $KERNEL_ONLY != yes ]]; then validate_kiosk_app; fi
 print_args
+
+repo=$(pwd)
+if [[ $TYPE == kiosk ]]; then kiosk_signature=$(kiosk_rootfs_signature "$repo"); fi
 
 if [ ! -d build_dir ];then
     mkdir build_dir
@@ -371,12 +398,20 @@ if [ ${KERNEL_ONLY} == "yes" ];then
     exit 0
 fi
 
-if [ -f ${workspace}/rootfs-${VERSION}-${TYPE}.tar.gz ];then
+rootfs_archive="${workspace}/rootfs-${VERSION}-${TYPE}.tar.gz"
+if [[ $TYPE == kiosk && -f $rootfs_archive &&
+      $(cat "$rootfs_archive.inputs.sha256" 2>/dev/null || true) != "$kiosk_signature" ]]; then
+    rm -f "$rootfs_archive"
+fi
+if [ -f "$rootfs_archive" ];then
     echo "found rootfs tar, skip build rootfs."
 else
-    sudo mkdir ${ROOTFS} && sudo bash ../scripts/mkrootfs.sh -m ${MIRROR} -r ${ROOTFS} -v ${VERSION} -b ${BOARD} -t ${TYPE}
+    sudo bash ../scripts/mkrootfs.sh -m "$MIRROR" -r "$ROOTFS" -v "$VERSION" -b "$BOARD" -t "$TYPE"
 fi
-sudo bash ../scripts/pack.sh -b ${BOARD} -t ${TYPE} -v ${VERSION} -u ${SYS_USER} -p ${SYS_PASSWORD} -s ${ROOT_PASSWORD}
+if [[ $TYPE == kiosk ]]; then printf '%s\n' "$kiosk_signature" > "$rootfs_archive.inputs.sha256"; fi
+pack_args=(-b "$BOARD" -t "$TYPE" -v "$VERSION" -u "$SYS_USER" -p "$SYS_PASSWORD" -s "$ROOT_PASSWORD")
+if [[ -n $APP_DEB ]]; then pack_args+=(--app-deb "$APP_DEB"); fi
+sudo bash ../scripts/pack.sh "${pack_args[@]}"
 
 AVA_VERSION=$(cat ../VERSION)
 if [ -f sdcard.img.xz ];then

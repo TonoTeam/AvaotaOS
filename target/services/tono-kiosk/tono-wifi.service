@@ -1,0 +1,11 @@
+[Unit]
+Description=Avaota A1 Wi-Fi radio initialization
+After=basic.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/sbin/modprobe aic8800_fdrv
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target
