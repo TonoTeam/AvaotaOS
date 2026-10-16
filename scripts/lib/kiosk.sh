@@ -51,7 +51,7 @@ kiosk_image_size() {
     local payload=$(($1 + $2 + $3)) boot=$4 headroom overhead
     headroom=$((payload / 10))
     (( headroom >= 256 )) || headroom=256
-    overhead=$(((payload + 19) / 20 + 64))
+    overhead=$(((payload + 9) / 10 + 128))
     echo $((((boot + payload + headroom + overhead + 15) / 16) * 16))
 }
 
