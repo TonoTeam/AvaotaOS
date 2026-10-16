@@ -8,6 +8,7 @@ if [[ $# != 1 || $(uname -s) != Linux || $EUID != 0 ]]; then
     exit 2
 fi
 image=$(realpath "$1")
+repo=$(cd -- "$(dirname -- "$0")/.." && pwd)
 test -f "$image"
 verify_root=$(mktemp -d)
 loop=""
@@ -68,6 +69,10 @@ systemd-analyze --root="$root" verify tono-kiosk.service tono-wifi.service
 user=$(sed -n 's/^User=//p' "$root/etc/systemd/system/tono-kiosk.service.d/user.conf")
 uid=$(chroot "$root" id -u "$user")
 test "$uid" != 0
+chroot "$root" id -nG "$user" | tr ' ' '\n' | grep -qx tono-network
+test "$(chroot "$root" dpkg-query -W -f='${db:Status-Status}' polkitd)" = installed
+cmp "$repo/target/services/tono-kiosk/49-tono-network.rules" \
+    "$root/etc/polkit-1/rules.d/49-tono-network.rules"
 test "$(stat -c '%u' "$root/home/$user")" = "$uid"
 test "$(stat -c '%u' "$root/home/$user/.config/fcitx5/profile")" = "$uid"
 grep -qx "Environment=XDG_RUNTIME_DIR=/run/user/$uid" \

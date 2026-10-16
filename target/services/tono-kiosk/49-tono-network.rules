@@ -1,0 +1,14 @@
+// The kiosk keeps NetworkManager privileged and the app unprivileged.
+// Only an active local kiosk user may manage Wi-Fi and their own profiles.
+polkit.addRule(function(action, subject) {
+    var allowed = [
+        "org.freedesktop.NetworkManager.wifi.scan",
+        "org.freedesktop.NetworkManager.enable-disable-wifi",
+        "org.freedesktop.NetworkManager.network-control",
+        "org.freedesktop.NetworkManager.settings.modify.own"
+    ];
+    if (subject.local && subject.active && subject.isInGroup("tono-network") &&
+        allowed.indexOf(action.id) !== -1) {
+        return polkit.Result.YES;
+    }
+});

@@ -211,7 +211,7 @@ class KioskTests(unittest.TestCase):
                     case "$1" in
                         id) echo 1007 ;;
                         getent) echo 'artist:x:1007:1007::/home/artist:/bin/bash' ;;
-                        systemctl|chown) return 0 ;;
+                        systemctl|chown|groupadd|usermod) return 0 ;;
                         *) return 1 ;;
                     esac
                 }
@@ -223,6 +223,11 @@ class KioskTests(unittest.TestCase):
             self.assertIn("After=user@1007.service\n", configuration)
             self.assertIn("XDG_RUNTIME_DIR=/run/user/1007\n", configuration)
             self.assertEqual(profile.read_text(), "existing settings\n")
+            rule = root / "etc/polkit-1/rules.d/49-tono-network.rules"
+            self.assertEqual(rule.read_bytes(),
+                             (REPO / "target/services/tono-kiosk/49-tono-network.rules").read_bytes())
+            self.assertIn('subject.local && subject.active', rule.read_text())
+            self.assertNotIn('settings.modify.system', rule.read_text())
 
     def test_stop_keeps_session_alive_until_app_has_saved(self):
         with tempfile.TemporaryDirectory() as temporary:
