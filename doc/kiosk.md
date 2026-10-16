@@ -46,6 +46,8 @@ Kiosk 根分区从 128 MiB 开始，保留前 16 MiB 的 BootROM/启动器区域
 
 构建结束检查 root 可用空间至少 256 MiB、boot 至少 32 MiB，不足则报错，不输出容量不足的镜像。首次启动仍由 `init-resize.service` 将根分区扩展到 SD 卡容量。精简减少镜像和烧录体积，不代表内存或启动时间按同样比例下降。恢复工具随镜像安装到 `/usr/local/sbin/tono-repair-board-index`。
 
+2026-10-17 的完整构建将原始镜像从 3.31 GB 缩小到 1.95 GB，XZ 从 486 MB 缩小到 392 MB；软件包及版本保持一致。见[体积与功能验证记录](kiosk-size-validation.md)，其中单独记录了新旧镜像均复现的冻结 HTML 截图测试失败，以及尚未完成的实机验收。
+
 ## 启动与维护
 
 `tono-kiosk.service` 在 tty1 创建普通用户的 PAM/logind 会话，启动带 Xauthority 认证的 Xorg、无合成器的 Openbox、Fcitx5 和用户音频服务。启动命令为：

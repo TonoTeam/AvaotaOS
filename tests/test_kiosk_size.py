@@ -124,6 +124,7 @@ class KioskSizeTests(unittest.TestCase):
                 path = package / relative
                 path.parent.mkdir(parents=True, exist_ok=True)
                 path.write_text("fixture")
+            (package / "usr/share/doc/tono-size-alias").symlink_to("tono-size-fixture", target_is_directory=True)
             deb = base / "fixture.deb"
             subprocess.run(["dpkg-deb", "--build", str(package), str(deb)], check=True, capture_output=True)
             options = ["--" + line for line in (root / "etc/dpkg/dpkg.cfg.d/01-tono-kiosk-size").read_text().splitlines()
@@ -133,6 +134,7 @@ class KioskSizeTests(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stderr)
             for relative, present in files.items():
                 self.assertEqual((root / relative).exists(), present, relative)
+            self.assertTrue((root / "usr/share/doc/tono-size-alias/copyright").is_file())
 
 
 if __name__ == "__main__":
