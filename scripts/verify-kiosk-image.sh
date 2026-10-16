@@ -111,6 +111,24 @@ chroot "$root" /usr/sbin/runuser -u "$user" -- env \
 umount "$root/tmp"
 audit=$(chroot "$root" dpkg --audit)
 test -z "$audit" || { printf '%s\n' "$audit" >&2; exit 1; }
+if [[ -f $root/etc/dpkg/dpkg.cfg.d/01-tono-kiosk-size ]]; then
+    # Compaction must leave working upgrades, CJK/IME, GL and browser assets.
+    test ! -s "$root/var/cache/apt/pkgcache.bin"
+    test ! -s "$root/var/cache/apt/srcpkgcache.bin"
+    test -z "$(find "$root/var/lib/apt/lists" -type f -print -quit)"
+    test "$(df -Pm "$root" | awk 'NR == 2 { print $4 }')" -ge 256
+    test "$(df -Pm "$boot" | awk 'NR == 2 { print $4 }')" -ge 32
+    test "$(systemctl --root="$root" is-enabled init-resize.service)" = enabled
+    chroot "$root" tono-repair-board-index --help >/dev/null
+    for package in apt network-manager openssh-server fonts-noto-cjk fcitx5-pinyin \
+        libqt6webenginecore6 libgl1-mesa-dri pipewire wireplumber; do
+        test "$(chroot "$root" dpkg-query -W -f='${db:Status-Status}' "$package")" = installed
+    done
+    test -s "$root/usr/share/doc/apt/copyright"
+    test -s "$root/usr/local/share/doc/tono-kiosk/kiosk-recovery.md"
+    chroot "$root" apt-config dump | grep -qx 'Dir::Cache::pkgcache "";'
+    chroot "$root" apt-config dump | grep -qx 'Dir::Cache::srcpkgcache "";'
+fi
 dpkg-query --admindir="$root/var/lib/dpkg" -W \
     -f='${binary:Package} ${Version} ${db:Status-Status}\n' \
     tono-canvas xserver-xorg-core openbox fcitx5 pipewire wireplumber openssh-server \
@@ -126,7 +144,7 @@ test -n "$config"
 for option in USER_NS NAMESPACES SECCOMP SECCOMP_FILTER; do
     grep -qx "CONFIG_${option}=y" "$config"
 done
-python3 - "$image" <<'PY'
+python3 - "$image" "$root" <<'PY'
 import pathlib
 import struct
 import sys
@@ -136,6 +154,11 @@ with image.open('rb') as stream:
     mbr = stream.read(512)
     assert mbr[510:512] == b'\x55\xaa', 'Missing MBR signature'
     assert mbr[450] == 0x0c and mbr[466] == 0x83, 'Unexpected partition types'
+    if (pathlib.Path(sys.argv[2]) / 'etc/dpkg/dpkg.cfg.d/01-tono-kiosk-size').is_file():
+        boot_start, boot_sectors = struct.unpack_from('<II', mbr, 454)
+        root_start, = struct.unpack_from('<I', mbr, 470)
+        assert boot_start == 32768, 'BootROM gap must remain 16 MiB'
+        assert root_start == 262144 and boot_start + boot_sectors == root_start, 'Expected compact boot layout'
     stream.seek(8192)
     header = stream.read(32)
     assert header[4:12] == b'eGON.BT0', 'Missing Allwinner BootROM header'

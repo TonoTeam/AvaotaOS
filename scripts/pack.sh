@@ -167,7 +167,12 @@ pack_sdcard()
         rootfs_size=$(tar --numeric-owner -tvzf "${workspace}/rootfs-${VERSION}-${TYPE}.tar.gz" | awk '{size += $3} END {printf "%.0f", size / 1048576 + 1}')
     fi
     kernel_size=$(du -sm "${workspace}/deb-data" | cut -f 1)
-    img_size=$((rootfs_size + rootfs_size / 5 + kernel_size + BOOT_SIZE + 1024))
+    if [[ $TYPE == kiosk ]]; then
+        firmware_size=$(du -sm "${workspace}/../target/firmware" | cut -f1)
+        img_size=$(kiosk_image_size "$rootfs_size" "$kernel_size" "$firmware_size" "$BOOT_SIZE")
+    else
+        img_size=$((rootfs_size + rootfs_size / 5 + kernel_size + BOOT_SIZE + 1024))
+    fi
     
     truncate -s "${img_size}MiB" "${workspace}/sdcard.img"
     
@@ -184,7 +189,11 @@ pack_sdcard()
     rootpart=/dev/mapper/${loopX}p2
     
     mkfs.vfat -n boot -F 32 ${bootpart}
-    mkfs.ext4 -L rootfs ${rootpart}
+    if [[ $TYPE == kiosk ]]; then
+        mkfs.ext4 -m 1 -L rootfs "${rootpart}"
+    else
+        mkfs.ext4 -L rootfs ${rootpart}
+    fi
     
     mkdir ${workspace}/rootfs_dir
     mount ${rootpart} ${workspace}/rootfs_dir
@@ -206,7 +215,9 @@ pack_sdcard()
     cp -r ${workspace}/${BOARD}-kernel-pkgs ${workspace}/rootfs_dir/kernel-deb
     
     cat <<EOF | LC_ALL=C LANGUAGE=C LANG=C chroot ${workspace}/rootfs_dir /bin/bash -e
-apt-get remove linux-libc-dev -y
+if dpkg -s linux-libc-dev 2>/dev/null | grep -qx 'Status: install ok installed'; then
+    apt-get remove linux-libc-dev -y
+fi
 dpkg -i /kernel-deb/linux-libc-dev*.deb
 apt-get -f install -y
 dpkg -i /kernel-deb/linux-dtb*.deb
@@ -233,6 +244,17 @@ EOF
 
     if [ -f "${workspace}/rootfs_dir/usr/lib/systemd/system/systemd-resolved.service" ]; then
         ln -sfn /run/systemd/resolve/stub-resolv.conf "${workspace}/rootfs_dir/etc/resolv.conf"
+    fi
+
+    if [[ $TYPE == kiosk ]]; then
+        # Kernel package operations recreate apt lists/caches: trim once more.
+        compact_kiosk_rootfs "${workspace}/rootfs_dir" "${workspace}/.."
+        root_free=$(df -Pm "${workspace}/rootfs_dir" | awk 'NR == 2 { print $4 }')
+        boot_free=$(df -Pm "${workspace}/rootfs_dir/boot" | awk 'NR == 2 { print $4 }')
+        if (( root_free < 256 || boot_free < 32 )); then
+            echo "Kiosk image needs more free space: root=${root_free}MiB boot=${boot_free}MiB" >&2
+            exit 1
+        fi
     fi
     
     sync
@@ -269,6 +291,7 @@ source ../scripts/lib/bootloader/bootloader-${BL_CONFIG}.sh
 
 OFFSET=16
 BOOT_SIZE=256
+if [[ $TYPE == kiosk ]]; then BOOT_SIZE=128; fi
 part_table=msdos
 
 pack_sdcard

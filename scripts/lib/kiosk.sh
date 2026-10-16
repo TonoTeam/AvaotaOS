@@ -36,6 +36,21 @@ kiosk_rootfs_signature() {
         "$repo/boards/avaota-a1.conf" | sha256sum | cut -d' ' -f1
 }
 
+compact_kiosk_rootfs() {
+    [[ ${TYPE} == kiosk ]] || return 0
+    python3 "$2/scripts/trim-kiosk-rootfs.py" "$1"
+}
+
+kiosk_image_size() {
+    # Account for filesystem metadata/journal, plus at least 256 MiB free
+    # before first boot expands the root partition to the installed SD card.
+    local payload=$(($1 + $2 + $3)) boot=$4 headroom overhead
+    headroom=$((payload / 10))
+    (( headroom >= 256 )) || headroom=256
+    overhead=$(((payload + 19) / 20 + 64))
+    echo $((((boot + payload + headroom + overhead + 15) / 16) * 16))
+}
+
 cleanup_kiosk_rootfs() {
     [[ -n ${KIOSK_STAGE:-} && -d ${KIOSK_STAGE} ]] || return 0
     local path
@@ -50,6 +65,8 @@ cleanup_kiosk_rootfs() {
 
 prepare_kiosk_rootfs() {
     local workspace=$1
+    local repo
+    repo=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)
     KIOSK_STAGE=$(mktemp -d "${workspace}/kiosk-rootfs.XXXXXX")
     tar --numeric-owner -xzf "$workspace/rootfs-${VERSION}-${TYPE}.tar.gz" -C "$KIOSK_STAGE"
     # mkrootfs's archive contains the children of /, not its own metadata.
@@ -90,6 +107,8 @@ prepare_kiosk_rootfs() {
     umount "$stage/sys"
     umount "$stage/proc"
     umount "$stage/dev"
+    # Also applies when the base archive was produced before compaction.
+    compact_kiosk_rootfs "$stage" "$repo"
 }
 
 configure_kiosk_boot() {
@@ -131,10 +150,15 @@ install_kiosk_session() {
         echo "kiosk requires a non-root user with a /home/<user> home." >&2
         return 2
     fi
-    install -d "$root/usr/local/libexec" "$root/etc/systemd/system/tono-kiosk.service.d" \
+    install -d "$root/usr/local/libexec" "$root/usr/local/sbin" \
+        "$root/usr/local/share/doc/tono-kiosk" "$root/etc/systemd/system/tono-kiosk.service.d" \
         "$root/etc/apparmor.d" "$root/etc/xdg/tono-kiosk" "$root/etc/polkit-1/rules.d"
     install -m 755 "$repo"/target/services/tono-kiosk/tono-kiosk-{start,session,stop} \
         "$root/usr/local/libexec/"
+    install -m 755 "$repo/scripts/repair-kiosk-board-index.py" \
+        "$root/usr/local/sbin/tono-repair-board-index"
+    install -m 644 "$repo/doc/kiosk-recovery.md" \
+        "$root/usr/local/share/doc/tono-kiosk/kiosk-recovery.md"
     install -m 644 "$repo/target/services/tono-kiosk/tono-kiosk.service" "$root/etc/systemd/system/"
     install -m 644 "$repo/target/services/tono-kiosk/tono-wifi.service" "$root/etc/systemd/system/"
     install -m 644 "$repo/target/services/tono-kiosk/tono-canvas.apparmor" \
