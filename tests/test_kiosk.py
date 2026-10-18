@@ -30,6 +30,23 @@ class KioskTests(unittest.TestCase):
             with self.subTest(options=options):
                 self.assertNotEqual(self.shell("validate_kiosk_profile", **options).returncode, 0)
 
+
+    @unittest.skipUnless(shutil.which("sha256sum"), "requires sha256sum")
+    def test_rootfs_cache_changes_when_preservation_policy_changes(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            for relative in ("os/noble/kiosk-packages.list", "scripts/mkrootfs.sh",
+                             "boards/avaota-a1.conf", "scripts/trim-kiosk-rootfs.py"):
+                path = root / relative
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text("original")
+            first = self.shell('kiosk_rootfs_signature "$TEST_REPO"', TEST_REPO=directory)
+            (root / "scripts/trim-kiosk-rootfs.py").write_text("new license preservation policy")
+            second = self.shell('kiosk_rootfs_signature "$TEST_REPO"', TEST_REPO=directory)
+            self.assertEqual(first.returncode, 0, first.stderr)
+            self.assertEqual(second.returncode, 0, second.stderr)
+            self.assertNotEqual(first.stdout, second.stdout)
+
     def test_missing_app_is_rejected(self):
         self.assertNotEqual(self.shell("validate_kiosk_app", APP_DEB="/missing.deb").returncode, 0)
 
@@ -68,7 +85,11 @@ class KioskTests(unittest.TestCase):
             result = self.shell(textwrap.dedent('''
                 mount() { :; }
                 umount() { :; }
-                chroot() { :; }
+                chroot() {
+                    if [[ $* == *"apt-get install"* ]]; then
+                        grep -Fq '/*[-_.]' "$KIOSK_STAGE/etc/dpkg/dpkg.cfg.d/01-tono-kiosk-size"
+                    fi
+                }
                 dpkg-deb() { printf '1.1.3\\n'; }
                 sha256sum() { printf 'test-hash  test-file\\n'; }
                 prepare_kiosk_rootfs "$TEST_WORKSPACE"
@@ -87,7 +108,7 @@ class KioskTests(unittest.TestCase):
                           (root / "etc/X11/xorg.conf.d/20-avaota-display.conf").read_text())
             self.assertFalse((root / "etc/gdm3").exists())
             self.assertIn('Option "AccelMethod" "none"',
-                          (root / "etc/X11/xorg.conf.d/21-tono-software.conf").read_text())
+                          (root / "etc/X11/tono-kiosk-software/21-tono.conf").read_text())
 
     def test_wifi_remains_available_without_blocking_early_module_loading(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -183,12 +204,14 @@ class KioskTests(unittest.TestCase):
             base = Path(temporary)
             control = base / "package/DEBIAN/control"
             control.parent.mkdir(parents=True)
-            for name, architecture, accepted in (
-                ("tono-canvas", "arm64", True), ("tono-canvas", "amd64", False),
-                ("other-app", "arm64", False),
+            for name, architecture, version, accepted in (
+                ("tono-canvas", "arm64", "1.1.5", True),
+                ("tono-canvas", "arm64", "1.1.4", False),
+                ("tono-canvas", "amd64", "1.1.5", False),
+                ("other-app", "arm64", "1.1.5", False),
             ):
                 control.write_text(
-                    f"Package: {name}\nVersion: 1.0\nArchitecture: {architecture}\n"
+                    f"Package: {name}\nVersion: {version}\nArchitecture: {architecture}\n"
                     "Maintainer: Test <test@example.invalid>\nDescription: validation fixture\n"
                 )
                 package = base / "app package.deb"

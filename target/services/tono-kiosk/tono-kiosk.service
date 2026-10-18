@@ -10,6 +10,9 @@ StartLimitBurst=5
 Type=simple
 User=avaota
 PAMName=login
+# Xorg needs the primary DRM node to pass authenticated DRI3 fds to clients.
+SupplementaryGroups=video render
+EnvironmentFile=-/etc/default/tono-kiosk
 Environment=XDG_SESSION_TYPE=x11 XDG_SESSION_DESKTOP=tono-kiosk XDG_CURRENT_DESKTOP=Openbox
 Environment=XDG_SEAT=seat0 XDG_VTNR=1
 TTYPath=/dev/tty1

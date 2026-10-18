@@ -25,7 +25,9 @@ class KioskSizeTests(unittest.TestCase):
             self.fixture(root)
             kept = [
                 "usr/share/doc/example/copyright", "usr/share/doc/example/LICENSE.gz",
-                "usr/share/doc/example/legal/NOTICE", "usr/share/common-licenses/GPL-3",
+                "usr/share/doc/example/legal/NOTICE",
+                "usr/share/doc/example/cjson-LICENSE", "usr/share/doc/example/opus-COPYING",
+                "usr/share/doc/example/vendor-LiCeNcE.txt", "usr/share/common-licenses/GPL-3",
                 "usr/share/locale/locale.alias", "usr/share/locale/zh_CN/LC_MESSAGES/app.mo",
                 "usr/share/locale/zh_TW/LC_MESSAGES/app.mo", "usr/share/locale/en_GB/LC_MESSAGES/app.mo",
                 "usr/share/fonts/opentype/noto/cjk.ttc", "usr/share/qt6/resources/qtwebengine_resources.pak",
@@ -115,6 +117,8 @@ class KioskSizeTests(unittest.TestCase):
                                "Maintainer: Test <test@example.invalid>\nDescription: size fixture\n")
             files = {"usr/share/doc/tono-size-fixture/copyright": True,
                      "usr/share/doc/tono-size-fixture/LICENSE": True,
+                     "usr/share/doc/tono-size-fixture/cjson-LICENSE": True,
+                     "usr/share/doc/tono-size-fixture/opus-COPYING": True,
                      "usr/share/doc/tono-size-fixture/README": False,
                      "usr/share/man/man1/fixture.1": False,
                      "usr/share/locale/zh_CN/LC_MESSAGES/fixture.mo": True,

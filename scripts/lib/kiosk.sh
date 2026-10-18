@@ -28,12 +28,16 @@ validate_kiosk_app() {
         echo "The application package must be tono-canvas, Architecture: arm64." >&2
         return 2
     fi
+    if ! dpkg --compare-versions "$(dpkg-deb -f "$APP_DEB" Version)" ge 1.1.5; then
+        echo "The GPU kiosk profile requires tono-canvas >= 1.1.5 (--opengl-es)." >&2
+        return 2
+    fi
 }
 
 kiosk_rootfs_signature() {
     local repo=$1
     sha256sum "$repo/os/noble/kiosk-packages.list" "$repo/scripts/mkrootfs.sh" \
-        "$repo/boards/avaota-a1.conf" | sha256sum | cut -d' ' -f1
+        "$repo/boards/avaota-a1.conf" "$repo/scripts/trim-kiosk-rootfs.py" | sha256sum | cut -d' ' -f1
 }
 
 compact_kiosk_rootfs() {
@@ -47,7 +51,7 @@ kiosk_image_size() {
     local payload=$(($1 + $2 + $3)) boot=$4 headroom overhead
     headroom=$((payload / 10))
     (( headroom >= 256 )) || headroom=256
-    overhead=$(((payload + 19) / 20 + 64))
+    overhead=$(((payload + 9) / 10 + 128))
     echo $((((boot + payload + headroom + overhead + 15) / 16) * 16))
 }
 
@@ -73,6 +77,8 @@ prepare_kiosk_rootfs() {
     # cp -a stage/. later copies this mode onto the image's root directory.
     chmod 755 "$KIOSK_STAGE"
     local stage=$KIOSK_STAGE
+    # Refresh cached dpkg filters before installing the current App package.
+    compact_kiosk_rootfs "$stage" "$repo"
     # Package scripts must not start daemons on the build host.
     if [[ -e $stage/usr/sbin/policy-rc.d ]]; then
         mv "$stage/usr/sbin/policy-rc.d" "$stage/usr/sbin/policy-rc.d.kiosk-build"
@@ -150,11 +156,16 @@ install_kiosk_session() {
         echo "kiosk requires a non-root user with a /home/<user> home." >&2
         return 2
     fi
-    install -d "$root/usr/local/libexec" "$root/usr/local/sbin" \
+    install -d "$root/etc/default" "$root/usr/local/libexec" "$root/usr/local/sbin" \
         "$root/usr/local/share/doc/tono-kiosk" "$root/etc/systemd/system/tono-kiosk.service.d" \
         "$root/etc/apparmor.d" "$root/etc/xdg/tono-kiosk" "$root/etc/polkit-1/rules.d"
     install -m 755 "$repo"/target/services/tono-kiosk/tono-kiosk-{start,session,stop} \
         "$root/usr/local/libexec/"
+    install -m 755 "$repo/target/services/tono-kiosk/tono-gpu-probe" "$root/usr/local/libexec/"
+    if [[ ! -e $root/etc/default/tono-kiosk ]]; then
+        printf '# auto probes GLES; software is the recovery mode.\nTONO_RENDERER=auto\n' \
+            > "$root/etc/default/tono-kiosk"
+    fi
     install -m 755 "$repo/scripts/repair-kiosk-board-index.py" \
         "$root/usr/local/sbin/tono-repair-board-index"
     install -m 644 "$repo/doc/kiosk-recovery.md" \
