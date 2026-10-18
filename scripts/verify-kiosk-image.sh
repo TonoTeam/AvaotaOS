@@ -118,6 +118,8 @@ chroot "$root" /usr/sbin/runuser -u "$user" -- env \
     "${app}" --help > "$verify_root/app-help.txt"
 grep -q -- '--opengl-es' "$verify_root/app-help.txt"
 umount "$root/tmp"
+app_verify=$(chroot "$root" dpkg --verify tono-canvas)
+test -z "$app_verify" || { printf '%s\n' "$app_verify" >&2; exit 1; }
 audit=$(chroot "$root" dpkg --audit)
 test -z "$audit" || { printf '%s\n' "$audit" >&2; exit 1; }
 if [[ -f $root/etc/dpkg/dpkg.cfg.d/01-tono-kiosk-size ]]; then
