@@ -137,8 +137,11 @@ if [[ -f $root/etc/dpkg/dpkg.cfg.d/01-tono-kiosk-size ]]; then
     done
     test -s "$root/usr/share/doc/apt/copyright"
     test -s "$root/usr/local/share/doc/tono-kiosk/kiosk-recovery.md"
-    chroot "$root" apt-config dump | grep -qx 'Dir::Cache::pkgcache "";'
-    chroot "$root" apt-config dump | grep -qx 'Dir::Cache::srcpkgcache "";'
+    # Consume the complete dump before grep -q exits so pipefail cannot turn
+    # apt-config's SIGPIPE into a false image verification failure.
+    apt_config=$(chroot "$root" apt-config dump)
+    grep -qx 'Dir::Cache::pkgcache "";' <<< "$apt_config"
+    grep -qx 'Dir::Cache::srcpkgcache "";' <<< "$apt_config"
 fi
 dpkg-query --admindir="$root/var/lib/dpkg" -W \
     -f='${binary:Package} ${Version} ${db:Status-Status}\n' \

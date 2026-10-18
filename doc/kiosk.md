@@ -132,3 +132,5 @@ sudo bash scripts/verify-kiosk-image.sh /absolute/path/to/AvaotaOS-kiosk.img
 - 与原 GNOME 环境比较启动时间、空闲内存、普通画板和 HTML 画板的延迟；不以容器测试数字替代硬件测量。
 
 2026-10-16 的 A1 4GB 实机已验证：冷启动识别 SD 根分区并自动扩容、DHCP 与 SSH、普通用户启动 Tono Canvas 1.1.3、HDMI 2560×1440 全屏，用户确认屏幕已显示 App；运行约 4 分钟服务重启次数为 0。已保存串口、Xorg、服务和窗口属性记录。画笔、弹窗、中文输入、音视频、摄像头、崩溃恢复、关机恢复及与 GNOME 的性能对比仍需单独实机验收。
+
+2026-10-18，1.1.5 的 Mali GLES 模式完成普通窗口、低延迟全屏、WebGL2、软件恢复及整板正常重启复验；用户确认显示、已有画板打开和书写正常。完整工厂镜像及尚未覆盖的冷启动、外设和性能项目见 [GPU 验证记录](kiosk-gpu-validation.md)。
