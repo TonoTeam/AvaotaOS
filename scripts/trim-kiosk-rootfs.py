@@ -64,7 +64,11 @@ def trim(root):
             for name in files:
                 path = Path(directory) / name
                 # Preserve doc aliases and every package's license/notice files.
-                if not path.is_symlink() and not name.lower().startswith(LICENSE_PREFIXES):
+                license_name = name.lower()
+                keep = license_name.startswith(LICENSE_PREFIXES) or any(
+                    separator + prefix in license_name
+                    for separator in "-_." for prefix in LICENSE_PREFIXES)
+                if not path.is_symlink() and not keep:
                     remove(path)
 
     locales = paths["usr/share/locale"]
@@ -83,6 +87,7 @@ def trim(root):
     for prefix in LICENSE_PREFIXES:
         pattern = "".join("[" + char.lower() + char.upper() + "]" for char in prefix)
         filters.append("path-include=/usr/share/doc/*/" + pattern + "*")
+        filters.append("path-include=/usr/share/doc/*/*[-_.]" + pattern + "*")
     filters += [
         "path-exclude=/usr/share/locale/*",
         "path-include=/usr/share/locale/locale.alias",

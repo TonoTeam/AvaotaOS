@@ -37,7 +37,7 @@ validate_kiosk_app() {
 kiosk_rootfs_signature() {
     local repo=$1
     sha256sum "$repo/os/noble/kiosk-packages.list" "$repo/scripts/mkrootfs.sh" \
-        "$repo/boards/avaota-a1.conf" | sha256sum | cut -d' ' -f1
+        "$repo/boards/avaota-a1.conf" "$repo/scripts/trim-kiosk-rootfs.py" | sha256sum | cut -d' ' -f1
 }
 
 compact_kiosk_rootfs() {
@@ -77,6 +77,8 @@ prepare_kiosk_rootfs() {
     # cp -a stage/. later copies this mode onto the image's root directory.
     chmod 755 "$KIOSK_STAGE"
     local stage=$KIOSK_STAGE
+    # Refresh cached dpkg filters before installing the current App package.
+    compact_kiosk_rootfs "$stage" "$repo"
     # Package scripts must not start daemons on the build host.
     if [[ -e $stage/usr/sbin/policy-rc.d ]]; then
         mv "$stage/usr/sbin/policy-rc.d" "$stage/usr/sbin/policy-rc.d.kiosk-build"

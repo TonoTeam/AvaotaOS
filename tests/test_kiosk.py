@@ -30,6 +30,23 @@ class KioskTests(unittest.TestCase):
             with self.subTest(options=options):
                 self.assertNotEqual(self.shell("validate_kiosk_profile", **options).returncode, 0)
 
+
+    @unittest.skipUnless(shutil.which("sha256sum"), "requires sha256sum")
+    def test_rootfs_cache_changes_when_preservation_policy_changes(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            for relative in ("os/noble/kiosk-packages.list", "scripts/mkrootfs.sh",
+                             "boards/avaota-a1.conf", "scripts/trim-kiosk-rootfs.py"):
+                path = root / relative
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text("original")
+            first = self.shell('kiosk_rootfs_signature "$TEST_REPO"', TEST_REPO=directory)
+            (root / "scripts/trim-kiosk-rootfs.py").write_text("new license preservation policy")
+            second = self.shell('kiosk_rootfs_signature "$TEST_REPO"', TEST_REPO=directory)
+            self.assertEqual(first.returncode, 0, first.stderr)
+            self.assertEqual(second.returncode, 0, second.stderr)
+            self.assertNotEqual(first.stdout, second.stdout)
+
     def test_missing_app_is_rejected(self):
         self.assertNotEqual(self.shell("validate_kiosk_app", APP_DEB="/missing.deb").returncode, 0)
 
@@ -68,7 +85,11 @@ class KioskTests(unittest.TestCase):
             result = self.shell(textwrap.dedent('''
                 mount() { :; }
                 umount() { :; }
-                chroot() { :; }
+                chroot() {
+                    if [[ $* == *"apt-get install"* ]]; then
+                        grep -Fq '/*[-_.]' "$KIOSK_STAGE/etc/dpkg/dpkg.cfg.d/01-tono-kiosk-size"
+                    fi
+                }
                 dpkg-deb() { printf '1.1.3\\n'; }
                 sha256sum() { printf 'test-hash  test-file\\n'; }
                 prepare_kiosk_rootfs "$TEST_WORKSPACE"

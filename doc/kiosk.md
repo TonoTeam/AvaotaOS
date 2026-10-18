@@ -32,7 +32,7 @@ sudo bash build_all.sh \
 
 用户名与密码继续使用构建器原有 `-u`、`-p`、`-s` 参数。默认用户仍为 `avaota`；自定义用户会写入 kiosk 服务配置。应用以该普通用户运行。
 
-基础缓存是 `build_dir/rootfs-noble-kiosk.tar.gz`，只包含系统运行组件。包清单、rootfs 构建脚本和板级配置变化会使该缓存失效。每次打包都在临时根文件系统安装本次 `--app-deb` 及其依赖，再计算镜像容量；修改应用不会重建内核，也不会误用旧 App。安装包版本和 SHA-256 记录在镜像的 `/etc/tono-canvas-image`。
+基础缓存是 `build_dir/rootfs-noble-kiosk.tar.gz`，只包含系统运行组件。包清单、rootfs 构建脚本、板级配置或精简保留规则变化会使该缓存失效。每次打包都在临时根文件系统安装本次 `--app-deb` 及其依赖，再计算镜像容量；修改应用不会重建内核，也不会误用旧 App。安装包版本和 SHA-256 记录在镜像的 `/etc/tono-canvas-image`。
 
 烧写整张镜像会覆盖目标介质；已有设备更新 App 时使用 `sudo apt install ./tono-canvas_VERSION_arm64.deb`，不要为更新 App 重刷系统。
 
@@ -40,7 +40,7 @@ sudo bash build_all.sh \
 
 Kiosk 在安装本次 App 后、计算容量前清理 APT 索引、下载包和二进制缓存，再在内核包安装结束后清理一次。此步骤也适用于旧的基础 rootfs 缓存。保留 apt、dpkg 状态和软件源；维护时先执行 `sudo apt update`。APT 的两个可再生成的二进制缓存默认关闭，索引仍会在 `apt update` 时重新下载。
 
-`scripts/trim-kiosk-rootfs.py` 仅接受带 `DESKTOP=kiosk` 标记的暂存根目录。它精简手册、Info、普通包文档及中英文以外的系统 gettext 翻译，保留包的 copyright、LICENSE、COPYING、NOTICE 及公共许可证，安装对应的 dpkg 路径过滤规则。英文/中文 gettext 翻译继续安装，Qt 翻译、WebEngine 语言包/资源、全部字体、拼音词库、多媒体、Mesa/LLVM、固件和内核模块均保留。此清理不处理用户目录、Wi-Fi 配置、SSH 密钥或应用身份；它用于构建工厂镜像，不作为已部署设备上的清理命令。
+`scripts/trim-kiosk-rootfs.py` 仅接受带 `DESKTOP=kiosk` 标记的暂存根目录。它精简手册、Info、普通包文档及中英文以外的系统 gettext 翻译，保留包的 copyright、LICENSE、COPYING、NOTICE 及公共许可证，包括 `cjson-LICENSE`、`opus-COPYING` 等带前缀的名称，安装对应的 dpkg 路径过滤规则。应用安装前先更新暂存根目录中的 dpkg 过滤规则，确保复用旧缓存时也能保留这些文件。英文/中文 gettext 翻译继续安装，Qt 翻译、WebEngine 语言包/资源、全部字体、拼音词库、多媒体、Mesa/LLVM、固件和内核模块均保留。此清理不处理用户目录、Wi-Fi 配置、SSH 密钥或应用身份；它用于构建工厂镜像，不作为已部署设备上的清理命令。
 
 Kiosk 根分区从 128 MiB 开始，保留前 16 MiB 的 BootROM/启动器区域，FAT 启动分区为 112 MiB。其他镜像类型继续使用原布局。容量按精简后的 rootfs、内核和固件大小计算，额外预留约 10%＋128 MiB 给文件系统元数据/日志，再预留至少 256 MiB 或内容的 10%（取较大者）用于首次启动前的维护，按 16 MiB 对齐。去掉旧的固定 1 GiB 加 20% 预留；ext4 保留日志，root 保留块比例从 5% 调整为 1%。
 
