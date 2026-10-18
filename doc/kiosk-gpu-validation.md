@@ -63,6 +63,18 @@ App 基于 main `91a6921e12730c75846500556802e455c8745ca0`，实现提交 `20575
 
 完整 XZ 解压后的 SHA-256 与原始镜像一致。只读镜像校验通过，App 的五项文件校验无差异，根分区剩余 303 MiB；首次启动仍保留自动扩容。对应 deb 的 SHA-256 为 `eed2588b020ac34f5d144567be831e9a3cc2f557e5892976fa5134a15e76d83a`。校验器先读取完整 apt 配置再匹配，避免 `pipefail` 将 `grep -q` 提前结束引起的 SIGPIPE 误判为镜像错误；此校验器修正不影响镜像内容。
 
-已验证现有 SD 系统安装同一 App/会话后的正常重启；未烧录本次工厂镜像做首次扩容或断电冷启动验收。真实触笔、麦克风/扬声器、摄像头及与 GNOME 的量化性能对比未在本次测试中验证，不以容器或注入事件的数据代替。
+## 烧录后首次上电验收
+
+2026-10-18，将上述 `.img` 写入 4,026,531,840 字节 TF 卡，完整读回镜像区域的 SHA-256 与原镜像一致，再安全弹出。用户插回 A1 上电后，SSH 公钥与工厂镜像内的公钥一致，安装包清单和会话脚本校验也匹配。此次检查包含本次工厂镜像的一次实际首次上电。
+
+- 首次扩容成功，根分区扩至 3,892,314,112 字节，ext4 可用 2,253 MiB；扩容服务执行成功后已自动禁用。
+- `tono-kiosk` 为 active/running，自动重启次数为 0，App 1.1.5 使用 `--fullscreen --low-latency --opengl-es`；安装文件校验无差异。
+- Xorg 报告 Mali-G57/Panfrost glamor 和 DRI3，实际 App 持有 render 节点。普通用户探针报告 GLES 3.1；GPU 着色器、WebGL2 网页像素及最终 Quick 合成像素均为预期 `(64,128,191,255)`。Chromium renderer 保留命名空间和 seccomp 沙盒。
+- 用户确认新镜像自动显示 Tono Canvas，能够打开并书写。临时图形探针已删除，检查前后白板 PID 相同，无需重启会话。
+- 本次日志未见 GPU 挂死、重置或 SD/ext4 错误。仍有原 BSP 已出现的 GPU cooling device 注册、部分频点不支持及红外接收器初始化警告；GPU 功能测试通过，长时间运行和温控行为未验证。
+
+首次启动的 systemd 统计为内核 2.885 秒、用户空间 11.322 秒、总计 14.208 秒；此数字不含启动器阶段，也不是 App 可见首帧时间，不能直接用于比较此前的首帧测量。
+
+已有系统的正常整板重启及上述新镜像首次上电均已验证。新镜像的重复断电启动、长时间运行、专门的真实触笔测试、麦克风/扬声器、摄像头及与 GNOME 的量化性能对比尚未验证，不以容器或注入事件的数据代替。
 
 参考：[Mesa Panfrost](https://docs.mesa3d.org/drivers/panfrost.html)、[Qt QSurfaceFormat](https://doc.qt.io/qt-6/qsurfaceformat.html)、[Qt WebEngine 沙盒要求](https://doc.qt.io/qt-6.5/qtwebengine-platform-notes.html)。
