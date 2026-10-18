@@ -5,6 +5,9 @@ export LANG="${LANG:-C.UTF-8}"
 session_dir="$XDG_RUNTIME_DIR/tono-kiosk"
 app_pid="" wm_pid="" ime_pid=""
 cleanup() {
+    local status=$?
+    # xinit can return success even when its client exits unsuccessfully.
+    printf '%s\n' "$status" > "$session_dir/session.exit"
     rm -f "$session_dir/app.pid"
     [[ -z $ime_pid ]] || kill "$ime_pid" 2>/dev/null || true
     [[ -z $wm_pid ]] || kill "$wm_pid" 2>/dev/null || true

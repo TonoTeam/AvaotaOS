@@ -61,7 +61,7 @@ QT_QPA_PLATFORM=xcb QT_XCB_GL_INTEGRATION=xcb_egl \
 
 App 的 X11/X Shape 原生墨迹路径保持可用。A1 的 Mesa Panfrost 提供 Mali-G57 GLES 3.1；Quick 与 WebEngine 显式使用 GLES 3/EGL，共用硬件纹理。加速覆盖窗口/纹理/HTML/WebGL 合成，原有 C 引擎笔刷计算和原生低延迟 RasterSurface 仍由 CPU 执行，不把它们描述为 GPU 笔刷。
 
-`/etc/default/tono-kiosk` 默认 `TONO_RENDERER=auto`。启动前以服务用户执行最长 8 秒的 GLES 3 着色器和像素读回测试，仅在确认 Mali-G57/Panfrost 硬件后选择 glamor Xorg 配置和 `--opengl-es`。探测失败选择完整的软件 Xorg 配置及原有 `--software-rendering`；硬件 Xorg 或应用启动异常退出时，同次会话再尝试一次软件模式。正常保存退出不触发这次降级。不能检测仍存活但卡住的驱动；这种情况可经 SSH 强制软件模式：
+`/etc/default/tono-kiosk` 默认 `TONO_RENDERER=auto`。启动前以服务用户执行最长 8 秒的 GLES 3 着色器和像素读回测试，仅在确认 Mali-G57/Panfrost 硬件后选择 glamor Xorg 配置和 `--opengl-es`。探测失败选择完整的软件 Xorg 配置及原有 `--software-rendering`；硬件 Xorg 或应用启动异常退出时，同次会话再尝试一次软件模式。会话退出时另外记录客户端状态，避免 xinit 把应用的失败退出码吞掉；每次启动前清理旧状态。正常保存退出不触发这次降级。不能检测仍存活但卡住的驱动；这种情况可经 SSH 强制软件模式：
 
 ```sh
 sudo sed -i 's/^TONO_RENDERER=.*/TONO_RENDERER=software/' /etc/default/tono-kiosk
