@@ -9,6 +9,7 @@
 ```sh
 systemctl status tono-kiosk.service
 journalctl -b -u tono-kiosk.service -n 100 --no-pager
+journalctl -b -t tono-kiosk-start -n 100 --no-pager
 systemctl status wpa_supplicant.service
 getent group tty video render netdev polkitd tono-network
 od -An -tx1 -N4 /usr/bin/tono-canvas
@@ -67,4 +68,4 @@ sudo systemctl start tono-kiosk.service
 - 实机全系统软件校验与参考镜像结果一致，未发现额外软件文件差异。
 - 正常关机后完成一次断电启动，10 个关键文件哈希未变，App 自动全屏，Wi-Fi 自动重连，服务重启次数为 0，无失败单元。用户确认屏幕再次显示 Tono Canvas。
 
-本次记录验证了恢复后的已保存文件和启动流程，尚未验证运行中直接断电的可靠性、新笔迹强制断电恢复、长期反复断电或存储介质寿命。维护时观察到图形会话停止后的 `xinit` 返回状态 1；关机完成，后续启动和关键文件校验通过，该退出状态尚未单独修正。
+本次记录验证了恢复后的已保存文件和启动流程，尚未验证运行中直接断电的可靠性、新笔迹强制断电恢复、长期反复断电或存储介质寿命。维护时观察到图形会话停止后的 `xinit` 返回状态 1；关机完成，后续启动和关键文件校验通过。2026-10-20 查明原因是停止时的 `ExecStop=` 挂断 tty1，xinit 收到 SIGHUP 后提前停止 Xorg；停止流程已改为由会话主进程转发 SIGTERM，见 [kiosk.md](kiosk.md)。

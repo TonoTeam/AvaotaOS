@@ -75,6 +75,7 @@ Openbox 保证文件对话框、输入法候选框和全屏之间的焦点交接
 ```sh
 systemctl status tono-kiosk.service
 journalctl -b -u tono-kiosk.service
+journalctl -b -t tono-kiosk-start
 sudo systemctl stop tono-kiosk.service
 sudo apt install ./tono-canvas_VERSION_arm64.deb
 sudo sync
@@ -89,7 +90,11 @@ sudo systemctl start tono-kiosk.service
 
 2026-10-16，A1 kiosk 实机升级至 1.1.4，核实 App 会话的扫描、无线开关、连接控制和自身配置权限，并在页内列出真实热点。用户在设备上输入密码后确认连接成功；安装前后已有画板和 App 设置文件的 SHA-256 一致。同日完成系统文件恢复后的断电启动验证，App 自动显示，Wi-Fi 自动重连。企业认证与隐藏热点未在本次验收中验证。
 
-正常停止或关机时，先向 App 发送 SIGTERM，Qt 将它交给现有保存关闭流程；Xorg、音频和输入法保留至 App 退出，最多等待 90 秒。超时会记录错误再结束会话。异常崩溃、强制断电或保存失败不保证未保存笔迹可恢复；已保存的数据不由启动器删除。Fcitx5 初始配置含美式键盘和拼音，已有输入法配置不覆盖。
+正常停止、重启服务或关机时，systemd 只向会话主进程 `tono-kiosk-start` 发送 SIGTERM（`KillMode=mixed`），由它运行 `tono-kiosk-stop` 把 SIGTERM 转给 App，Qt 将它交给现有保存关闭流程；Xorg、音频和输入法保留至 App 退出，最多等待 90 秒。App 退出后会话脚本结束，xinit 随后停止 Xorg。App 尚未启动时直接结束会话；超时会记录错误并结束会话，服务以失败状态停止。服务不设 `ExecStop=`：systemd 启动停止命令时同样按 `TTYVHangup=yes` 挂断 tty1，主进程和 xinit 随之收到 SIGHUP，xinit 立即停止 Xorg 并挂断 App，App 来不及保存。
+
+PAM 把主进程、Xorg 和 App 移入 logind 的 `session-N.scope`。关机时该 scope 原本与服务并行停止，直接向 Xorg 和 App 发送 SIGTERM 与 SIGHUP。镜像安装 `/etc/systemd/system/session-.scope.d/10-tono-kiosk.conf`，令所有会话 scope 在 `tono-kiosk.service` 停止后才停止；SSH 会话因此也在 kiosk 停止后才断开。这些进程的输出同样按 scope 记录：`journalctl -u tono-kiosk.service` 只含服务启停，启动脚本、Xorg 和 App 的输出用 `journalctl -b -t tono-kiosk-start` 查看。
+
+异常崩溃、强制断电或保存失败不保证未保存笔迹可恢复；已保存的数据不由启动器删除。Fcitx5 初始配置含美式键盘和拼音，已有输入法配置不覆盖。
 
 如果重启后只有背光、App 未显示，按[黑屏排查与系统文件恢复](kiosk-recovery.md)先检查服务、用户组、应用及软件包数据库，并在修复后验证断电启动。
 
@@ -134,3 +139,5 @@ sudo bash scripts/verify-kiosk-image.sh /absolute/path/to/AvaotaOS-kiosk.img
 2026-10-16 的 A1 4GB 实机已验证：冷启动识别 SD 根分区并自动扩容、DHCP 与 SSH、普通用户启动 Tono Canvas 1.1.3、HDMI 2560×1440 全屏，用户确认屏幕已显示 App；运行约 4 分钟服务重启次数为 0。已保存串口、Xorg、服务和窗口属性记录。画笔、弹窗、中文输入、音视频、摄像头、崩溃恢复、关机恢复及与 GNOME 的性能对比仍需单独实机验收。
 
 2026-10-18，1.1.5 的 Mali GLES 模式完成普通窗口、低延迟全屏、WebGL2、软件恢复及整板正常重启复验；用户确认显示、已有画板打开和书写正常。完整工厂镜像及尚未覆盖的冷启动、外设和性能项目见 [GPU 验证记录](kiosk-gpu-validation.md)。
+
+2026-10-20，在 A1 实机（Tono Canvas 1.1.10，设备上为 `codex/kiosk-html-performance` 分支的会话脚本）复验停止流程。旧配置停止服务时，Stopping 后约 30 ms 内 X 连接即断开，整个停止约 65 ms，App 没有走保存流程。新的启动、停止脚本以运行时 bind mount 装入，服务与 scope 配置放在 `/run` 下，`XDG_DATA_HOME`、`XDG_CONFIG_HOME` 指向用户数据副本。新建画板画一笔、不回首页后执行 `systemctl restart`，再画一笔后执行 `stop`、`start`：日志均显示先向 App 发送 SIGTERM，App 写完画板文件并退出后 xinit 才停止 Xorg，重新打开画板后笔迹都在。停止约需 1.6–2 秒，其中约 1 秒是 xinit 每秒一次检查 Xorg 是否退出。在同一事务中停止服务及其 session scope 以模拟关机：有 scope 顺序配置时笔迹保存；去掉该配置的对照组中二者并行停止，App 未写入任何文件，笔迹丢失。另验证软件模式会话中的重启、App 崩溃后同次会话改用软件模式、再次崩溃后服务自动重启、GPU 探测失败时选择软件模式、启动后 0.3–2 秒内停止均在约 1.1 秒内结束，以及 F11/Escape 切换直接全屏。结束后恢复原脚本与配置，真实画板和设置的 SHA-256 与测试前备份一致。整机重启或关机、开机自启和 90 秒保存超时未做实机验证，镜像未重新构建。

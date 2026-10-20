@@ -2,16 +2,59 @@
 import os
 from pathlib import Path
 import shutil
+import signal
 import subprocess
 import sys
 import stat
 import tarfile
 import tempfile
 import textwrap
+import time
 import unittest
 
 REPO = Path(__file__).resolve().parents[1]
 LIBRARY = REPO / "scripts/lib/kiosk.sh"
+SERVICES = REPO / "target/services/tono-kiosk"
+# Like xinit: Xorg stops after the client exits, but a signal hangs up the
+# client's process group and stops Xorg at once.
+FAKE_XINIT = textwrap.dedent('''\
+    #!/usr/bin/env python3
+    import os, signal, subprocess, sys
+    def record(event):
+        with open(os.environ["EVENTS"], "a") as events:
+            events.write(event + "\\n")
+    client = None
+    def stop(number, frame):
+        record("xinit signal %d" % number)
+        if client:
+            os.killpg(client.pid, signal.SIGHUP)
+        record("xorg stopped")
+        os._exit(1)
+    for number in (signal.SIGHUP, signal.SIGINT, signal.SIGTERM):
+        signal.signal(number, stop)
+    client = subprocess.Popen([sys.argv[1]], preexec_fn=os.setpgrp)
+    record("xinit " + os.environ["TONO_RENDERER"])
+    client.wait()
+    record("xorg stopped")
+''')
+# Saves for a moment on SIGTERM, as Tono Canvas does, unless told to hang.
+FAKE_APP = textwrap.dedent('''\
+    #!/usr/bin/env python3
+    import os, signal, sys, time
+    def record(event):
+        with open(os.environ["EVENTS"], "a") as events:
+            events.write(event + "\\n")
+    def save(number, frame):
+        time.sleep(0.3)
+        record("app saved")
+        sys.exit(0)
+    signal.signal(signal.SIGTERM, save if os.environ["TEST_APP"] == "save" else signal.SIG_IGN)
+    record("app running")
+    while os.path.exists(os.environ["ALIVE"]):
+        time.sleep(0.1)
+''')
+# Session helpers run until killed, or until the test removes its marker.
+FAKE_DAEMON = '#!/bin/sh\nwhile [ -e "$ALIVE" ]; do sleep 0.1; done\n'
 
 
 class KioskTests(unittest.TestCase):
@@ -252,6 +295,8 @@ class KioskTests(unittest.TestCase):
                              (REPO / "target/services/tono-kiosk/49-tono-network.rules").read_bytes())
             self.assertIn('subject.local && subject.active', rule.read_text())
             self.assertNotIn('settings.modify.system', rule.read_text())
+            scope = root / "etc/systemd/system/session-.scope.d/10-tono-kiosk.conf"
+            self.assertEqual(scope.read_bytes(), (SERVICES / "session-scope.conf").read_bytes())
 
     def test_stop_keeps_session_alive_until_app_has_saved(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -291,6 +336,90 @@ class KioskTests(unittest.TestCase):
                     child.kill()
                     child.wait()
                 child.stdout.close()
+
+    def stop_kiosk(self, app="save", attempts=180, idle=False):
+        """Run tono-kiosk-start with fixture programs, then stop it as systemd does."""
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            fixtures = root / "bin"
+            fixtures.mkdir()
+            events, alive, log = root / "events", root / "alive", root / "stderr"
+            alive.touch()
+            for name, body in {
+                "timeout": '#!/bin/sh\nshift\nexec "$@"\n', "xauth": "#!/bin/sh\n",
+                "mcookie": "#!/bin/sh\necho cookie\n", "tono-gpu-probe": "#!/bin/sh\n",
+                "systemctl": "#!/bin/sh\n", "xset": "#!/bin/sh\n",
+                "openbox": FAKE_DAEMON, "fcitx5": FAKE_DAEMON, "idle-session": FAKE_DAEMON,
+                "xinit": FAKE_XINIT, "tono-canvas": FAKE_APP,
+                "tono-kiosk-stop": (SERVICES / "tono-kiosk-stop").read_text().replace(
+                    "attempt < 180", f"attempt < {attempts}"),
+            }.items():
+                (fixtures / name).write_text(body)
+                (fixtures / name).chmod(0o755)
+            # An idle session stands in for the time before the app has started.
+            session = fixtures / "idle-session" if idle else SERVICES / "tono-kiosk-session"
+            script = (SERVICES / "tono-kiosk-start").read_text()
+            for program, replacement in (
+                    ("/usr/bin/xinit", fixtures / "xinit"),
+                    ("/usr/local/libexec/tono-kiosk-session", session),
+                    ("/usr/local/libexec/tono-kiosk-stop", fixtures / "tono-kiosk-stop"),
+                    ("/usr/local/libexec/tono-gpu-probe", fixtures / "tono-gpu-probe")):
+                self.assertTrue(program in script, program)
+                script = script.replace(program, str(replacement))
+            (fixtures / "tono-kiosk-start").write_text(script)
+            environment = dict(os.environ, PATH=f"{fixtures}:{os.environ['PATH']}",
+                               XDG_RUNTIME_DIR=temporary, TONO_RENDERER="auto",
+                               EVENTS=str(events), ALIVE=str(alive), TEST_APP=app)
+            started = "xinit hardware" if idle else "app running"
+            pid_file = root / "tono-kiosk/app.pid"
+            # A file, not a pipe: fixtures left over by a failure must not block the test.
+            with log.open("w") as stderr:
+                process = subprocess.Popen(["bash", str(fixtures / "tono-kiosk-start")],
+                                           env=environment, stderr=stderr)
+            try:
+                deadline = time.monotonic() + 10
+                while time.monotonic() < deadline and not (
+                        events.exists() and started in events.read_text().splitlines() and
+                        (started != "app running" or pid_file.exists())):
+                    time.sleep(0.05)
+                process.send_signal(signal.SIGTERM)
+                process.wait(timeout=20)
+            finally:
+                alive.unlink()
+                if process.poll() is None:
+                    process.kill()
+                    process.wait()
+            result = root / "tono-kiosk/session.exit"
+            return (process.returncode, events.read_text().splitlines(), log.read_text(),
+                    result.read_text() if result.exists() else None)
+
+    def test_sigterm_lets_the_app_save_before_xinit_stops_xorg(self):
+        status, events, stderr, session = self.stop_kiosk()
+        self.assertEqual(status, 0, stderr)
+        # No xinit signal and no software retry: the app saved, then Xorg stopped.
+        self.assertEqual(events, ["xinit hardware", "app running", "app saved", "xorg stopped"])
+        self.assertEqual(session, "0\n")
+        self.assertIn("Asked Tono Canvas", stderr)
+        self.assertIn("Xorg has exited", stderr)
+
+    def test_sigterm_before_the_app_starts_ends_the_session(self):
+        status, events, stderr, _ = self.stop_kiosk(idle=True)
+        self.assertEqual(status, 0, stderr)
+        self.assertEqual(events, ["xinit hardware", "xinit signal 15", "xorg stopped"])
+
+    def test_app_that_does_not_save_in_time_still_stops_xorg(self):
+        status, events, stderr, _ = self.stop_kiosk(app="hang", attempts=2)
+        self.assertEqual(status, 1)
+        self.assertIn("did not finish saving", stderr)
+        self.assertEqual(events, ["xinit hardware", "app running", "xinit signal 15", "xorg stopped"])
+
+    def test_stop_never_hangs_up_tty1_and_shutdown_stops_the_kiosk_first(self):
+        unit = (SERVICES / "tono-kiosk.service").read_text().splitlines()
+        self.assertEqual([line for line in unit if line.startswith("ExecStop")], [])
+        for setting in ("TTYPath=/dev/tty1", "StandardInput=tty", "TTYVHangup=yes",
+                        "PAMName=login", "KillMode=mixed", "Restart=always"):
+            self.assertIn(setting, unit)
+        self.assertIn("Before=tono-kiosk.service", (SERVICES / "session-scope.conf").read_text().splitlines())
 
 
 if __name__ == "__main__":

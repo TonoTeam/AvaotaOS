@@ -22,15 +22,46 @@ case "$requested" in
     *) echo "Invalid TONO_RENDERER: $requested" >&2; exit 2 ;;
 esac
 export TONO_RENDERER
-trap 'exit 0' TERM INT
+stopping=0 stop_status=0 xinit_pid=""
+# systemd sends SIGTERM only to this process. A stop command would make systemd
+# hang up tty1, and xinit would then end Xorg before the app had saved.
+stop_session() {
+    stopping=1
+    if [[ -e $XDG_RUNTIME_DIR/tono-kiosk/app.pid ]]; then
+        # Xorg, audio and the input method keep running while the app saves.
+        if /usr/local/libexec/tono-kiosk-stop; then
+            return 0  # The session script exits next; xinit then stops Xorg.
+        fi
+        stop_status=1
+    fi
+    # No app is running yet, or it did not finish saving: end the session.
+    [[ -z $xinit_pid ]] || kill -TERM "$xinit_pid" 2>/dev/null || true
+}
+trap stop_session TERM INT
 start_display() {
     local status=0 result_file="$XDG_RUNTIME_DIR/tono-kiosk/session.exit"
     rm -f "$result_file"
+    (( !stopping )) || return 0
     echo "Starting Tono Canvas: renderer=$TONO_RENDERER" >&2
     # Relative names resolve under /etc/X11 and are allowed for rootless Xorg.
     /usr/bin/xinit /usr/local/libexec/tono-kiosk-session -- \
         /usr/lib/xorg/Xorg :0 vt1 -configdir "tono-kiosk-$TONO_RENDERER" \
-        -auth "$XAUTHORITY" -keeptty -nolisten tcp -noreset || status=$?
+        -auth "$XAUTHORITY" -keeptty -nolisten tcp -noreset &
+    xinit_pid=$!
+    # A stop that arrived before the pid was known must still end this session.
+    (( !stopping )) || stop_session
+    # Bash delays traps until a foreground command ends, so xinit runs in the
+    # background. A trap interrupts wait; keep waiting until xinit has exited.
+    while :; do
+        status=0
+        wait "$xinit_pid" || status=$?
+        kill -0 "$xinit_pid" 2>/dev/null || break
+    done
+    xinit_pid=""
+    if (( stopping )); then
+        echo "Tono Canvas session stopped; Xorg has exited." >&2
+        return 0
+    fi
     if [[ $status == 0 && -r $result_file ]]; then
         if ! read -r status < "$result_file" ||
            [[ ! $status =~ ^(0|[1-9][0-9]{0,2})$ ]] || (( status > 255 )); then
@@ -41,10 +72,11 @@ start_display() {
 }
 status=0
 start_display || status=$?
-if [[ $requested == auto && $TONO_RENDERER == hardware && $status != 0 ]]; then
+if (( !stopping )) && [[ $requested == auto && $TONO_RENDERER == hardware && $status != 0 ]]; then
     echo "Hardware session failed ($status); retrying with software rendering." >&2
     export TONO_RENDERER=software
-    start_display
-else
-    exit "$status"
+    status=0
+    start_display || status=$?
 fi
+(( !stopping )) || status=$stop_status
+exit "$status"
