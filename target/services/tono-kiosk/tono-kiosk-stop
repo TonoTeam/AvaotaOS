@@ -1,13 +1,18 @@
 #!/usr/bin/env bash
+# tono-kiosk-start runs this on SIGTERM; it is not an ExecStop= command.
 set -euo pipefail
 pid_file="$XDG_RUNTIME_DIR/tono-kiosk/app.pid"
 [[ -r $pid_file ]] || exit 0
 read -r app_pid < "$pid_file"
 [[ $app_pid =~ ^[0-9]+$ ]] || exit 1
 kill -TERM "$app_pid" 2>/dev/null || exit 0
+echo "Asked Tono Canvas (pid $app_pid) to save before Xorg stops." >&2
 # Keep the X server, audio and input-method processes alive during saving.
 for ((attempt = 0; attempt < 180; attempt++)); do
-    kill -0 "$app_pid" 2>/dev/null || exit 0
+    if ! kill -0 "$app_pid" 2>/dev/null; then
+        echo "Tono Canvas has exited." >&2
+        exit 0
+    fi
     sleep 0.5
 done
 echo "Tono Canvas did not finish saving within 90 seconds; see the application log." >&2

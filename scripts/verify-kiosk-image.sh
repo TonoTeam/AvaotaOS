@@ -77,6 +77,10 @@ test "$(stat -c '%u' "$root/home/$user")" = "$uid"
 test "$(stat -c '%u' "$root/home/$user/.config/fcitx5/profile")" = "$uid"
 grep -qx "Environment=XDG_RUNTIME_DIR=/run/user/$uid" \
     "$root/etc/systemd/system/tono-kiosk.service.d/user.conf"
+# Stopping must not hang up tty1, and shutdown stops the kiosk before its scope.
+test -z "$(sed -n '/^ExecStop=/p' "$root/etc/systemd/system/tono-kiosk.service")"
+cmp "$repo/target/services/tono-kiosk/session-scope.conf" \
+    "$root/etc/systemd/system/session-.scope.d/10-tono-kiosk.conf"
 grep -q 'MatchDriver "sun4i-drm"' "$root/etc/X11/xorg.conf.d/20-avaota-display.conf"
 test ! -e "$root/etc/modules-load.d/avaota-wifi.conf"
 grep -qx 'ExecStart=/usr/sbin/modprobe aic8800_fdrv' "$root/etc/systemd/system/tono-wifi.service"

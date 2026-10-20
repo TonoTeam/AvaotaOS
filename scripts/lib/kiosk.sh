@@ -190,6 +190,10 @@ Environment=XDG_RUNTIME_DIR=/run/user/${uid}
 Environment=DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/${uid}/bus
 WorkingDirectory=${home}
 EOF
+    # Shutdown stops the kiosk before the logind scope holding Xorg and the app.
+    install -d "$root/etc/systemd/system/session-.scope.d"
+    install -m 644 "$repo/target/services/tono-kiosk/session-scope.conf" \
+        "$root/etc/systemd/system/session-.scope.d/10-tono-kiosk.conf"
     # Seed input methods only on a new profile; never replace existing settings.
     if [[ ! -e $root$home/.config/fcitx5/profile ]]; then
         install -d "$root$home/.config/fcitx5"
