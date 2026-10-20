@@ -176,6 +176,14 @@ install_kiosk_session() {
         "$root/etc/apparmor.d/tono-canvas"
     install -m 644 "$repo/target/services/tono-kiosk/openbox.xml" "$root/etc/xdg/tono-kiosk/"
     install -m 644 "$repo/target/services/tono-kiosk/49-tono-network.rules" "$root/etc/polkit-1/rules.d/"
+    # The 3.5mm jack microphone is the codec's MIC3, captured as one channel:
+    # the card's udev event routes the mixer, WirePlumber exposes a mono node.
+    install -d "$root/etc/wireplumber/main.lua.d" "$root/etc/udev/rules.d"
+    install -m 644 "$repo/target/services/tono-kiosk/60-tono-headset-mic.lua" \
+        "$root/etc/wireplumber/main.lua.d/"
+    install -m 644 "$repo/target/services/tono-kiosk/91-tono-headset-mic.rules" "$root/etc/udev/rules.d/"
+    install -m 755 "$repo/target/services/tono-kiosk/tono-headset-mic" "$root/usr/local/libexec/"
+    install -m 644 "$repo/target/services/tono-kiosk/tono-headset-mic.service" "$root/etc/systemd/system/"
     chroot "$root" groupadd --system --force tono-network
     chroot "$root" usermod --append --groups tono-network "$SYS_USER"
     cat > "$root/etc/systemd/system/tono-kiosk.service.d/user.conf" <<EOF

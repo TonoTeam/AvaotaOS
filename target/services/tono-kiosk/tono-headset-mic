@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+# SPDX-License-Identifier: GPL-3.0
+# Route the Avaota A1 codec's capture path to the 3.5mm headset microphone.
+# The jack microphone is MICIN3P (MIC3); MICIN1 and MICIN2 are not wired on
+# this board, and the codec's ADC FIFO carries one channel per enabled input,
+# so any second enabled input misaligns the mono stream WirePlumber expects.
+# Output switches and gains stay with the driver and the audio session.
+set -euo pipefail
+amixer -c audiocodec cset "name='MIC1 Switch'" off
+amixer -c audiocodec cset "name='MIC2 Switch'" off
+amixer -c audiocodec cset "name='MIC3 Switch'" on

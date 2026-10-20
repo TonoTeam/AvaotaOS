@@ -15,6 +15,13 @@ import unittest
 REPO = Path(__file__).resolve().parents[1]
 LIBRARY = REPO / "scripts/lib/kiosk.sh"
 SERVICES = REPO / "target/services/tono-kiosk"
+# Headset microphone capture: repository file -> path inside the image.
+HEADSET_MIC_FILES = {
+    "60-tono-headset-mic.lua": "etc/wireplumber/main.lua.d/60-tono-headset-mic.lua",
+    "91-tono-headset-mic.rules": "etc/udev/rules.d/91-tono-headset-mic.rules",
+    "tono-headset-mic.service": "etc/systemd/system/tono-headset-mic.service",
+    "tono-headset-mic": "usr/local/libexec/tono-headset-mic",
+}
 # Like xinit: Xorg stops after the client exits, but a signal hangs up the
 # client's process group and stops Xorg at once.
 FAKE_XINIT = textwrap.dedent('''\
@@ -297,6 +304,77 @@ class KioskTests(unittest.TestCase):
             self.assertNotIn('settings.modify.system', rule.read_text())
             scope = root / "etc/systemd/system/session-.scope.d/10-tono-kiosk.conf"
             self.assertEqual(scope.read_bytes(), (SERVICES / "session-scope.conf").read_bytes())
+            for name, relative in HEADSET_MIC_FILES.items():
+                self.assertEqual((root / relative).read_bytes(), (SERVICES / name).read_bytes(), name)
+            self.assertTrue(os.access(root / "usr/local/libexec/tono-headset-mic", os.X_OK))
+
+    def run_headset_mic(self, amixer_body=""):
+        """Run tono-headset-mic against a recording amixer stand-in."""
+        with tempfile.TemporaryDirectory() as temporary:
+            fixtures = Path(temporary)
+            calls = fixtures / "calls"
+            amixer = fixtures / "amixer"
+            amixer.write_text('#!/bin/sh\nprintf "%s\\n" "$*" >> "$CALLS"\n' + amixer_body)
+            amixer.chmod(0o755)
+            result = subprocess.run(
+                ["bash", str(SERVICES / "tono-headset-mic")],
+                env=dict(os.environ, PATH=f"{fixtures}:{os.environ['PATH']}", CALLS=str(calls)),
+                capture_output=True, text=True,
+            )
+            return result, calls.read_text().splitlines() if calls.exists() else []
+
+    def test_headset_microphone_is_the_only_enabled_codec_input(self):
+        result, calls = self.run_headset_mic()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        # Full control names: the codec's simple mixer names are just MIC1..3.
+        self.assertEqual(calls, ["-c audiocodec cset name='MIC1 Switch' off",
+                                 "-c audiocodec cset name='MIC2 Switch' off",
+                                 "-c audiocodec cset name='MIC3 Switch' on"])
+        for name in ("HPOUT", "LINEOUT", "SPK", "Volume", "Gain"):
+            self.assertFalse(any(name in call for call in calls), name)
+        # A control the driver no longer offers must fail loudly, not half-apply.
+        result, calls = self.run_headset_mic('case "$*" in *MIC2*) exit 1 ;; esac\n')
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(len(calls), 2)
+
+    def test_headset_microphone_routing_follows_the_codec_and_precedes_the_kiosk(self):
+        unit = (SERVICES / "tono-headset-mic.service").read_text().splitlines()
+        for setting in ("After=alsa-restore.service", "Before=tono-kiosk.service", "Type=oneshot",
+                        "ExecStart=/usr/local/libexec/tono-headset-mic"):
+            self.assertIn(setting, unit)
+        # The card's udev event starts it, so another sound card appearing first
+        # cannot consume the trigger; a static unit has no [Install] section.
+        self.assertNotIn("[Install]", unit)
+        rules = [line for line in (SERVICES / "91-tono-headset-mic.rules").read_text().splitlines()
+                 if line and not line.startswith("#")]
+        self.assertEqual(len(rules), 1)
+        for token in ('ACTION=="add"', 'SUBSYSTEM=="sound"', 'KERNEL=="controlC*"',
+                      'ATTRS{id}=="audiocodec"', 'TAG+="systemd"',
+                      'ENV{SYSTEMD_WANTS}+="tono-headset-mic.service"'):
+            self.assertIn(token, rules[0])
+        # alsa-utils restores saved state from 90-alsa-restore.rules; sort after it.
+        self.assertGreater("91-tono-headset-mic.rules", "90-alsa-restore.rules")
+        if shutil.which("udevadm") and subprocess.run(
+                ["udevadm", "verify", "--help"], capture_output=True).returncode == 0:
+            subprocess.run(["udevadm", "verify", str(SERVICES / "91-tono-headset-mic.rules")],
+                           check=True, capture_output=True)
+
+    def test_headset_microphone_node_is_mono_on_mic3(self):
+        rule = (SERVICES / "60-tono-headset-mic.lua").read_text()
+        self.assertIn("table.insert(alsa_monitor.rules", rule)
+        self.assertIn('"node.name", "equals", '
+                      '"alsa_input.platform-soc_3000000_codec_mach.stereo-fallback"', rule)
+        self.assertIn('["audio.channels"] = 1', rule)
+        self.assertIn('["audio.position"] = "MONO"', rule)
+        self.assertIn('["node.description"] = "Avaota A1 Headset Microphone"', rule)
+        # WirePlumber 0.4 loads main.lua.d in name order: after alsa_monitor is
+        # defined (50-alsa-config.lua) and before the monitors start (90-enable-all.lua).
+        self.assertTrue("50-alsa-config.lua" < "60-tono-headset-mic.lua" < "90-enable-all.lua")
+        luac = next((tool for tool in ("luac", "luac5.4", "luac5.3", "luac5.1")
+                     if shutil.which(tool)), None)
+        if luac:
+            subprocess.run([luac, "-p", str(SERVICES / "60-tono-headset-mic.lua")],
+                           check=True, capture_output=True)
 
     def test_stop_keeps_session_alive_until_app_has_saved(self):
         with tempfile.TemporaryDirectory() as temporary:
