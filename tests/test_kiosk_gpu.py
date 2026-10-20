@@ -95,3 +95,7 @@ class GpuSessionTests(unittest.TestCase):
             self.assertEqual(result.returncode, 42, result.stderr)
             self.assertEqual((root / 'tono-kiosk/session.exit').read_text(), '42\n')
             self.assertFalse((root / 'tono-kiosk/app.pid').exists())
+
+
+if __name__ == "__main__":
+    unittest.main()
