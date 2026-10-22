@@ -1,6 +1,6 @@
 # AvaotaOS · 单应用画板基础系统
 
-面向 **Avaota A1（A527）** 的 Tono Canvas 专用 Linux 基础系统。设备上电后自动进入全屏白板，提供手写、HTML/WebGL 内容、中文输入、网络和音视频所需的运行环境。
+面向搭载 **全志（Allwinner）A527** 的 **Avaota A1 开发板**，为 Tono Canvas 提供专用 Linux 基础系统。设备上电后自动进入全屏白板，提供手写、HTML/WebGL 内容、中文输入、网络和音视频所需的运行环境。
 
 本仓库负责构建完整的 TF / SD 卡启动镜像，以及白板的启动、停止和系统维护。白板 App 在独立的 [Tono Canvas App 仓库](https://github.com/TonoTeam/tono-canvas-app) 开发，通过 ARM64 `.deb` 安装到镜像中；AI 服务端独立部署，地址在 App 中配置。
 
@@ -19,7 +19,7 @@
 
 ```mermaid
 flowchart TD
-    A["Avaota A1 上电"] --> B["SyterKit / Linux BSP / Ubuntu 24.04"]
+    A["Avaota A1（全志 A527）上电"] --> B["SyterKit / Linux BSP / Ubuntu 24.04"]
     B --> C["systemd · tono-kiosk.service"]
     C --> D["Xorg + Openbox 图形会话"]
     D --> E["Tono Canvas 全屏白板"]
@@ -29,7 +29,8 @@ flowchart TD
 
 | 项目 | 配置 |
 | --- | --- |
-| 开发板 | Avaota A1 / A527 |
+| 开发板 | Avaota A1 |
+| 主控芯片（SoC） | 全志（Allwinner）A527 |
 | 系统 | Ubuntu 24.04，代号 `noble` |
 | 架构 | ARM64，由板级配置确定 |
 | 内核与启动器 | 板载外设所需的 BSP、设备树、固件与 SyterKit |
