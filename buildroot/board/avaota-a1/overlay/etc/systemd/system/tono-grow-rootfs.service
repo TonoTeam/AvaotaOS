@@ -1,0 +1,16 @@
+[Unit]
+Description=Expand and verify the running A1 SD root filesystem
+After=systemd-remount-fs.service
+Before=tono-kiosk.service
+ConditionPathExists=!/var/lib/tono-grow-rootfs/complete
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/libexec/tono-grow-rootfs
+StateDirectory=tono-grow-rootfs
+StateDirectoryMode=0700
+TimeoutStartSec=120
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

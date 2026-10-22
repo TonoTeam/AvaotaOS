@@ -1,0 +1,2 @@
+# Match the existing appliance development account.
+avaota ALL=(ALL:ALL) NOPASSWD: ALL

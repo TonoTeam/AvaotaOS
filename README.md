@@ -39,6 +39,8 @@ flowchart TD
 
 仓库仍保留上游的其他系统与桌面构建入口；画板设备使用本文的 `kiosk` 配置。
 
+另提供 [Buildroot 单应用版本](doc/buildroot.md)，使用独立的 `build_buildroot.sh` 入口。首版由 Buildroot 构建系统核心、网络和音频服务，并保留已验证的 Qt/WebEngine 图形兼容运行时。
+
 ## 快速构建
 
 ### 1. 准备应用安装包
@@ -138,6 +140,8 @@ sudo systemctl start tono-kiosk.service
 | [单应用镜像构建与维护](doc/kiosk.md) | App 打包、完整镜像构建、缓存、启动、Wi-Fi、更新与验收 |
 | [黑屏排查与系统文件恢复](doc/kiosk-recovery.md) | 启动故障定位、文件完整性检查与画板索引恢复 |
 | [镜像体积与功能验证](doc/kiosk-size-validation.md) | 精简规则及对应构建的体积、空间和功能验证记录 |
+| [Buildroot 构建与维护](doc/buildroot.md) | A527 Buildroot 系统核心、应用兼容运行时与完整镜像构建 |
+| [Buildroot 构建验证](doc/buildroot-validation.md) | 构建产物、软件回归及硬件验证范围 |
 | [GPU 加速验证](doc/kiosk-gpu-validation.md) | GLES / WebGL、软件恢复模式及完整镜像验收 |
 
 ## 上游与许可

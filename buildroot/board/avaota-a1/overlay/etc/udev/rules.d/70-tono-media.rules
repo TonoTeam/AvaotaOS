@@ -1,0 +1,5 @@
+# Keep camera, ALSA and DRM permissions usable by the same ordinary user.
+SUBSYSTEM=="drm", KERNEL=="renderD*", GROUP="render", MODE="0660"
+SUBSYSTEM=="drm", KERNEL=="card[0-9]*", GROUP="video", MODE="0660", TAG+="uaccess"
+SUBSYSTEM=="video4linux", GROUP="video", MODE="0660", TAG+="uaccess"
+SUBSYSTEM=="sound", GROUP="audio", MODE="0660", TAG+="uaccess"
