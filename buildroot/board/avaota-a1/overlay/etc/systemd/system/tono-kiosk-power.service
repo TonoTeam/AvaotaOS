@@ -1,0 +1,11 @@
+[Unit]
+Description=Tono Canvas CPU frequency policy
+After=systemd-udev-trigger.service
+Before=tono-kiosk.service
+ConditionPathIsDirectory=/sys/devices/system/cpu/cpufreq
+
+[Service]
+Type=oneshot
+EnvironmentFile=-/etc/default/tono-kiosk
+ExecStart=/usr/local/libexec/tono-kiosk-power
+RemainAfterExit=yes

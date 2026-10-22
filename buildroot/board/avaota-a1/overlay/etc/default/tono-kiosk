@@ -1,0 +1,5 @@
+# Hardware is selected only after the existing GLES shader/pixel preflight.
+TONO_RENDERER=auto
+
+# Prefer the available dynamic CPU policy; never change frequency limits.
+TONO_CPU_GOVERNOR=auto

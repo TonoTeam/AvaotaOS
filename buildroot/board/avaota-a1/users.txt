@@ -1,0 +1,5 @@
+# Native and compatibility processes share these identities via read-only binds.
+# Keep stable IDs so application data and device access survive image updates.
+- - render 989 * - - - DRM render nodes
+- - tono-network 990 * - - - Tono local Wi-Fi management
+avaota 1000 avaota 1000 =avaota /home/avaota /bin/bash audio,video,render,tono-network,wheel,plugdev Tono Canvas

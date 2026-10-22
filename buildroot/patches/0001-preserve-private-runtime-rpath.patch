@@ -1,0 +1,14 @@
+From: Tono Team
+Subject: [PATCH] fix-rpath: preserve imported application and BSP payloads
+
+The private Qt runtime and vendor BSP are imported after native target
+finalization. A cached rebuild must not rewrite their verified bytes before
+the post-build hook validates and atomically replaces the previous payload.
+
+Upstream-Status: Inappropriate [Avaota A1 application compatibility runtime]
+
+--- a/support/scripts/fix-rpath
++++ b/support/scripts/fix-rpath
+@@ -61 +61 @@
+-TARGET_EXCLUDEPATHS="/lib/firmware"
++TARGET_EXCLUDEPATHS="/lib/firmware /usr/lib/firmware /opt/tono-runtime /usr/lib/modules"

@@ -1,0 +1,16 @@
+# Network and SSH start alongside the UI. Never wait for Internet reachability.
+enable tono-kiosk.service
+enable tono-wifi.service
+enable tono-grow-rootfs.service
+enable NetworkManager.service
+enable sshd.service
+enable systemd-resolved.service
+enable systemd-timesyncd.service
+disable NetworkManager-wait-online.service
+disable systemd-networkd.service
+disable systemd-networkd-wait-online.service
+disable xorg.service
+# Audio runs in avaota's existing user manager, started by the kiosk session.
+disable pipewire.service
+disable pipewire-pulse.service
+disable wireplumber.service

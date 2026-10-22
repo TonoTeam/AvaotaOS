@@ -1,0 +1,118 @@
+#!/usr/bin/env python3
+"""Grow only the running A1 SD root partition; preserve its start and identity."""
+# SPDX-License-Identifier: GPL-3.0
+import json
+import os
+from pathlib import Path
+import re
+import subprocess
+import sys
+
+ROOT_START = 128 * 1024 * 1024 // 512
+
+
+def command(*args, input=None):
+    return subprocess.run(
+        args, input=input, check=True, capture_output=True, text=True,
+        env={**os.environ, "LC_ALL": "C"},
+    ).stdout.strip()
+
+
+def layout(disk, sectors):
+    table = json.loads(command("sfdisk", "--json", disk))["partitiontable"]
+    if (table.get("label") != "dos" or table.get("unit") != "sectors" or
+            table.get("device") != disk or table.get("sectorsize", 512) != 512 or
+            not re.fullmatch(r"0x[0-9a-fA-F]{8}", table.get("id", ""))):
+        raise RuntimeError("Unexpected SD partition table")
+    if int(table["id"], 16) == 0:
+        raise RuntimeError("SD partition identity must be nonzero")
+    parts = table.get("partitions", [])
+    if len(parts) != 2 or [p.get("node") for p in parts] != [disk + "p1", disk + "p2"]:
+        raise RuntimeError("Root must be the second and last partition")
+    boot, root = parts
+    if (not isinstance(root.get("start"), int) or root["start"] != ROOT_START or
+            not isinstance(root.get("size"), int) or root["size"] <= 0 or
+            root.get("type") != "83" or
+            not isinstance(boot.get("start"), int) or boot["start"] <= 0 or
+            not isinstance(boot.get("size"), int) or boot["size"] <= 0 or
+            boot["start"] + boot["size"] > ROOT_START or
+            ROOT_START + root["size"] > sectors or
+            sectors > 2 ** 32 or sectors <= ROOT_START):
+        raise RuntimeError("Unexpected root start, size, type or SD capacity")
+    return table
+
+
+def grow(state):
+    if os.geteuid() != 0:
+        raise RuntimeError("Root privileges required")
+    part = command("findmnt", "-ern", "-o", "SOURCE", "/")
+    if not re.fullmatch(r"/dev/mmcblk[0-9]+p2", part):
+        raise RuntimeError("Running root is not an A1 MMC partition 2")
+    if command("findmnt", "-rn", "-o", "FSTYPE", "/") != "ext4":
+        raise RuntimeError("Running root must be ext4")
+    if command("blkid", "-s", "LABEL", "-o", "value", part) != "rootfs":
+        raise RuntimeError("Running root label is not rootfs")
+    disk = part[:-2]
+    if command("blockdev", "--getss", disk) != "512":
+        raise RuntimeError("Only 512-byte logical sectors are supported")
+    sectors = int(command("blockdev", "--getsz", disk))
+    before = layout(disk, sectors)
+    partuuid = command("blkid", "-s", "PARTUUID", "-o", "value", part)
+    if partuuid.lower() != before["id"][2:].lower() + "-02":
+        raise RuntimeError("Root PARTUUID does not match the partition table")
+    desired = sectors - ROOT_START
+    state.mkdir(parents=True, exist_ok=True)
+    if before["partitions"][1]["size"] != desired:
+        backup = state / "partition-table.before"
+        if not backup.exists():
+            backup.write_text(command("sfdisk", "--dump", disk) + "\n")
+            backup.chmod(0o600)
+            with backup.open("rb") as saved:
+                os.fsync(saved.fileno())
+        # Update one size field. No delete/recreate, UUID regeneration or wiping.
+        command("sfdisk", "--lock=yes", "--no-reread", "--no-tell-kernel",
+                "--wipe", "never", "--wipe-partitions", "never", "-N", "2",
+                disk, input=f"size={desired}\n")
+        expected = json.loads(json.dumps(before))
+        expected["partitions"][1]["size"] = desired
+        if layout(disk, sectors) != expected:
+            raise RuntimeError("Partition identity or another partition changed")
+    command("partx", "--update", "--nr", "2", disk)
+    if int(command("blockdev", "--getsz", part)) != desired:
+        raise RuntimeError("Kernel has not accepted the expanded root partition")
+    if command("blkid", "-s", "PARTUUID", "-o", "value", part) != partuuid:
+        raise RuntimeError("Root PARTUUID changed")
+    command("resize2fs", part)
+    info = command("dumpe2fs", "-h", part)
+    values = {}
+    for field in ("Block count", "Block size"):
+        match = re.search(r"^" + field + r":\s+([0-9]+)\s*$", info, re.MULTILINE)
+        if not match:
+            raise RuntimeError("Cannot verify resized ext4 size")
+        values[field] = int(match.group(1))
+    count, size = values["Block count"], values["Block size"]
+    if (count <= 0 or size not in (1024, 2048, 4096, 8192, 16384, 32768, 65536) or
+            not 0 <= desired * 512 - count * size < size):
+        raise RuntimeError("ext4 has not grown to the partition size")
+    os.sync()
+    marker = state / "complete"
+    pending = state / "complete.tmp"
+    with pending.open("w") as output:
+        output.write(f"partition={part}\npartuuid={partuuid}\nsectors={desired}\nblocks={count}\n")
+        output.flush()
+        os.fsync(output.fileno())
+    pending.replace(marker)
+    directory = os.open(state, os.O_RDONLY)
+    try:
+        os.fsync(directory)
+    finally:
+        os.close(directory)
+    print("A1 root partition and ext4 expanded and verified:", part)
+
+
+if __name__ == "__main__":
+    try:
+        grow(Path(os.environ.get("STATE_DIRECTORY", "/var/lib/tono-grow-rootfs")))
+    except (OSError, ValueError, KeyError, RuntimeError, subprocess.CalledProcessError) as error:
+        print("Root expansion incomplete; retrying next boot:", error, file=sys.stderr)
+        sys.exit(1)

@@ -1,0 +1,45 @@
+#!/usr/bin/env bash
+# SPDX-License-Identifier: GPL-3.0
+# Avoid the BSP's fixed maximum CPU clocks between interactive bursts.
+set -u
+
+requested=${TONO_CPU_GOVERNOR:-auto}
+root=${TONO_CPUFREQ_ROOT:-/sys/devices/system/cpu/cpufreq}
+if [[ $requested == keep ]]; then
+    exit 0
+fi
+if [[ ! $requested =~ ^[a-z][a-z0-9_-]*$ ]]; then
+    echo "tono-kiosk-power: invalid CPU governor" >&2
+    exit 2
+fi
+
+status=0
+for policy in "$root"/policy*; do
+    [[ -r $policy/scaling_governor && -r $policy/scaling_available_governors ]] || continue
+    current=$(<"$policy/scaling_governor")
+    available=" $(<"$policy/scaling_available_governors") "
+    governor=$requested
+    if [[ $requested == auto ]]; then
+        # Preserve an existing dynamic or administrator-selected policy.
+        [[ $current == performance ]] || continue
+        governor=""
+        for candidate in schedutil ondemand; do
+            if [[ $available == *" $candidate "* ]]; then
+                governor=$candidate
+                break
+            fi
+        done
+        [[ -n $governor ]] || continue
+    elif [[ $available != *" $governor "* ]]; then
+        echo "tono-kiosk-power: $governor unavailable for ${policy##*/}" >&2
+        status=1
+        continue
+    fi
+    if printf '%s\n' "$governor" > "$policy/scaling_governor"; then
+        echo "tono-kiosk-power: ${policy##*/}: $current -> $governor"
+    else
+        echo "tono-kiosk-power: cannot configure ${policy##*/}" >&2
+        status=1
+    fi
+done
+exit "$status"
