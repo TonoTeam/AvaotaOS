@@ -115,6 +115,25 @@ Kiosk 打包时默认移除 `earlycon`，使用 `quiet loglevel=3`，继续保�
 
 首帧使用临时 GLX/EGL 观察工具记录首次至少 640×480 的画面交换，两次均为 2560×1440；测量后已移除注入，正式镜像不包含该工具。以上时间从 Linux 内核启动计起，未包含约 9 秒的 SyterKit/固件阶段，也不包含触屏输入验收。两次测量均已完成 SD 扩容；首次烧录后的开机还包含一次性初始化。改善的是实际应用首帧，不能用 systemd 完成时间替代可见画面时间。优化后验证全屏、SSH、无线接口识别正常；没有执行无线 AP 连接或音视频外设测试。
 
+## 耳机麦克风
+
+A1 v1.7 原理图第 10 页：3.5mm 插座 CN2（PJ-327A0）接 HPOUTL/R、HP-DET 和 HS-MIC；HS-MIC 经 100nF 进 codec 的 MICIN3P（MIC3），偏置由 HBIAS 经 R64 2K 提供；MICIN1/2 未使用，codec 的 MIC-DET 引脚未连接。
+
+BSP 5.15 的 `snd_sun55iw3_codec` 录音时只打开主麦偏置 MBIAS，HBIAS 只在通过 MIC-DET ADC 识别出 HEADSET 后才打开。A1 没有接 MIC-DET，插入任何插头都只报 `jack report -> HEADPHONE`，HBIAS 保持关闭，耳机麦克风没有偏置，录到的只是直流和约 6 LSB 的 ADC 底噪（2026-10-20 实机：录音期间 `MICBIAS_REG` 0x318 的 HMICBIASEN=0）。打包阶段在设备树 `codec@7110000` 写入 `jack-sdbp-method = <1>`：驱动的慢插入检测在报 HEADPHONE 后打开 HBIAS 并保持到拔出。该模式同时打开 MIC-DET 中断；未连接的 MIC-DET 在偏置和检测 ADC 打开时读数为 0，不会产生按键事件。2026-10-20 在 A1 实机用该 DTB 重启验证：开机插着耳机时报 HEADPHONE 后 0x318 的 HMICBIASEN=1，录音期间 HBIAS 与 MBIAS 同时打开；拔出报 OUT，插回报 HEADPHONE 后 HBIAS 重新打开；每次插入多出一行 `jack type -> other:1` 日志，15 秒内 `audiocodec Headphones` 输入设备没有按键事件，App 正常运行。
+
+插头必须是 4 段 TRRS 且 MIC/GND 位置与插座一致（CTIA 与 OMTP 互反）。判断方法：向 HPOUT 播放 -31 dBFS 的 1 kHz 测试音并同时录 MIC3，接法一致时录音里几乎没有该音；2026-10-20 测试用的耳机录到 -5 dBFS 的 1 kHz，说明耳机公共端落在插座的 MIC 触点上，这类耳机无论软件如何设置都收不到声音，需要换耳机或加 CTIA/OMTP 转换头。
+
+录音路径的用户态部分由 `install_kiosk_session` 从 `target/services/tono-kiosk/` 装入镜像，不再依赖板上手动修改：
+
+- `91-tono-headset-mic.rules`（`/etc/udev/rules.d/`）：`audiocodec` 声卡的 `controlC*` 设备出现时，经 `SYSTEMD_WANTS` 拉起 `tono-headset-mic.service`。只匹配这块声卡，USB 摄像头等其他声卡先出现不会误触发，也不会像挂在 `sound.target` 下那样被别的声卡抢先消耗一次性触发。
+- `tono-headset-mic.service`（`/etc/systemd/system/`，static）：oneshot，`After=alsa-restore.service`、`Before=tono-kiosk.service`，执行 `/usr/local/libexec/tono-headset-mic`。
+- `tono-headset-mic`：用完整控件名执行 `amixer -c audiocodec cset "name='MIC1 Switch'" off`，再关 `MIC2 Switch`、开 `MIC3 Switch`。该 codec 的简单控件名只有 `MIC1`～`MIC3`，`sset 'MIC3 Switch'` 会报找不到控件。任一控件缺失即失败退出，`systemctl --failed` 可见。
+- `60-tono-headset-mic.lua`（`/etc/wireplumber/main.lua.d/`）：把 `alsa_input.platform-soc_3000000_codec_mach.stereo-fallback` 设为 `audio.channels=1`、`audio.position=MONO`，描述改为 `Avaota A1 Headset Microphone`。启用的 ADC 数决定 FIFO 通道数，只开 MIC3 时默认的立体声 profile 会错位。noble 的 WirePlumber 0.4.17 按文件名顺序加载 `main.lua.d`，该规则在 `50-alsa-config.lua` 定义 `alsa_monitor` 之后、`90-enable-all.lua` 之前生效；镜像检查会确认安装的 WirePlumber 仍带 `main.lua.d`，换到 0.5 需改写为 `wireplumber.conf.d` 的 `monitor.alsa.rules`。
+
+未采用其他做法的原因：随镜像发布 `/var/lib/alsa/asound.state` 依赖 `alsactl store` 在正常关机时改写的状态文件，运维经 SSH 改过 MIC 开关、删掉状态文件或 BSP 更新改动控件后都会悄悄失效，而且它是整卡快照，会连输出开关和增益一并固定；ALSA UCM 要新增 `alsa-ucm-conf` 并为这块卡编写配置，会改变 PipeWire 的 profile 和节点名，板上没有验证。oneshot 单元在声卡每次出现时显式设置这三个开关，不依赖驱动上电默认值。`alsa-restore.service` 由 `sound.target` 拉起并在同一事件里先于本单元完成，udev 的 `90-alsa-restore.rules` 也先执行 `alsactl restore`，因此保存的状态不会反过来覆盖它；之后 `alsactl store` 保存的就是这组值。`HPOUT Switch`、`LINEOUTL/R Switch`、`SPK Switch` 和各增益不在脚本里：它们属于播放路径，由驱动和音频会话控制，本次只处理录音。
+
+2026-10-20 在 A1 实机（WirePlumber 0.4.17、PipeWire 1.0.5、alsa-utils 1.2.9、systemd 255）不重启验证：`udevadm verify` 通过；`udevadm test --action=add /sys/class/sound/controlC0` 显示 `SYSTEMD_WANTS=tono-headset-mic.service sound.target`，且 `90-alsa-restore.rules` 的 `alsactl restore 0` 在同一事件中执行；`systemd-analyze verify` 通过，单元 After 含 `alsa-restore.service`、Before 含 `tono-kiosk.service`。先手动把 `MIC1 Switch` 打开、`MIC3 Switch` 关闭，`systemctl start tono-headset-mic.service` 后三者恢复为 off/off/on，HPOUT、SPK、LINEOUT 开关保持原值，`wpctl status` 的输入节点仍为 `Avaota A1 Headset Microphone`，`pw-dump` 显示 `audio.channels=1`、`MONO`。试验文件放在 `/run` 和 `/var/tmp`，结束后已删除；镜像未重新构建，整机重启后的自动触发待烧录新镜像验证。没有完整镜像时，可在 `ubuntu:24.04` ARM64 容器里安装 `systemd udev alsa-utils wireplumber pipewire`，以 `SYSTEMD_OFFLINE=1` 对容器根目录执行 `install_kiosk_session / <仓库>`，再运行 `scripts/verify-kiosk-image.sh` 中 `headset microphone capture` 标记之间的检查段；同日该段在与实机相同版本的容器 chroot 上通过，`python3 tests/test_kiosk.py` 的 20 项测试在容器内全部执行且通过。实际收音仍未确认：当前测试耳机的 MIC/GND 互换（见上），需要 CTIA 接法的 TRRS 耳机或转换头。
+
 ## 验证
 
 构建机可运行：
@@ -128,7 +147,7 @@ bash -n build_all.sh scripts/mkrootfs.sh scripts/pack.sh scripts/lib/kiosk.sh
 sudo bash scripts/verify-kiosk-image.sh /absolute/path/to/AvaotaOS-kiosk.img
 ```
 
-镜像检查以只读方式验证 FAT/ext4、MBR/BootROM 校验和、内核沙盒能力、App 动态库与包状态，以及 kiosk 服务、自定义用户、输入法和音频配置。应用运行其现有 Linux 普通窗口、低延迟全屏 QtTest，以及新增异步保存退出信号测试。静态镜像检查和 Xvfb 测试不能替代以下实机验收：
+镜像检查以只读方式验证 FAT/ext4、MBR/BootROM 校验和、内核沙盒能力、App 动态库与包状态，以及 kiosk 服务、自定义用户、输入法和音频配置（含耳机麦克风的 udev 规则、单元、脚本和 WirePlumber 单声道规则）。应用运行其现有 Linux 普通窗口、低延迟全屏 QtTest，以及新增异步保存退出信号测试。静态镜像检查和 Xvfb 测试不能替代以下实机验收：
 
 - 冷启动直接进入 App；断网仍能进入本地画板；SSH、apt、USB、串口正常。
 - 画笔、撤销、存取、HTML/WebGL、截图、文件选择、中文输入、F11/Escape 与弹窗焦点。

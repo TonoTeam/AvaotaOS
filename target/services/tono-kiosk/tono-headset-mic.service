@@ -1,0 +1,11 @@
+[Unit]
+Description=Avaota A1 headset microphone capture routing
+# 91-tono-headset-mic.rules starts this unit when the audiocodec card appears.
+# Running after alsactl has restored any saved mixer state means a stored state
+# can never leave the unwired MICIN1/2 inputs enabled for the kiosk session.
+After=alsa-restore.service
+Before=tono-kiosk.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/libexec/tono-headset-mic

@@ -1,0 +1,5 @@
+# SPDX-License-Identifier: GPL-3.0
+# Avaota A1: when the audiocodec card's control device appears, after
+# 90-alsa-restore.rules has restored any saved state, route capture to the
+# headset microphone. Other sound cards do not start the service.
+ACTION=="add", SUBSYSTEM=="sound", KERNEL=="controlC*", ATTRS{id}=="audiocodec", TAG+="systemd", ENV{SYSTEMD_WANTS}+="tono-headset-mic.service"

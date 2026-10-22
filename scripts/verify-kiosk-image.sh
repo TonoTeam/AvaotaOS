@@ -95,6 +95,26 @@ test -e "$root/usr/lib/systemd/user/pipewire.socket"
 test -e "$root/usr/lib/systemd/user/pipewire-pulse.socket"
 test -e "$root/usr/lib/systemd/user/wireplumber.service"
 test -e "$root/usr/lib/systemd/user/dbus.socket"
+# --- headset microphone capture (begin); doc/kiosk.md runs this block on a chroot
+cmp "$repo/target/services/tono-kiosk/60-tono-headset-mic.lua" \
+    "$root/etc/wireplumber/main.lua.d/60-tono-headset-mic.lua"
+# The installed WirePlumber must load Lua fragments (0.4); 0.5 would ignore them.
+test -s "$root/usr/share/wireplumber/main.lua.d/50-alsa-config.lua"
+cmp "$repo/target/services/tono-kiosk/91-tono-headset-mic.rules" \
+    "$root/etc/udev/rules.d/91-tono-headset-mic.rules"
+chroot "$root" udevadm verify /etc/udev/rules.d/91-tono-headset-mic.rules
+cmp "$repo/target/services/tono-kiosk/tono-headset-mic.service" \
+    "$root/etc/systemd/system/tono-headset-mic.service"
+# Started by the card's udev event, not by a target: static, never "enabled".
+test "$(systemctl --root="$root" is-enabled tono-headset-mic.service)" = static
+systemd-analyze --root="$root" verify tono-headset-mic.service
+cmp "$repo/target/services/tono-kiosk/tono-headset-mic" "$root/usr/local/libexec/tono-headset-mic"
+test -x "$root/usr/local/libexec/tono-headset-mic"
+bash -n "$root/usr/local/libexec/tono-headset-mic"
+test -x "$root/usr/bin/amixer"
+test -e "$root/usr/lib/systemd/system/alsa-restore.service"
+test -e "$root/usr/lib/udev/rules.d/90-alsa-restore.rules"
+# --- headset microphone capture (end)
 test -f "$root/etc/pam.d/login"
 for script in start session stop; do
     test -x "$root/usr/local/libexec/tono-kiosk-$script"
