@@ -1,0 +1,19 @@
+# Tono DeepSeek Harness user service
+[Unit]
+Description=DeepSeek Harness Web UI
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/deepseek-workspace
+ExecStart=%h/.local/bin/tono-dsh web --no-open --host 127.0.0.1 --port 3080
+UMask=0077
+Nice=10
+CPUWeight=20
+IOWeight=20
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=30
+
+[Install]
+WantedBy=default.target

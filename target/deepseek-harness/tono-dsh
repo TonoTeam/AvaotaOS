@@ -1,0 +1,7 @@
+#!/bin/sh
+# Tono DeepSeek Harness launcher
+set -eu
+package_root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+export PATH="$package_root/node/bin:$PATH"
+export DSH_HOME="${DSH_HOME:-$HOME/.local/share/deepseek-harness}"
+exec "$package_root/node/bin/node" "$package_root/app/node_modules/@deepseek-ai/dsh/lib/bin.js" "$@"
