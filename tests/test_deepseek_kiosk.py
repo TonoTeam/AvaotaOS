@@ -102,7 +102,8 @@ class BootHandoffTests(unittest.TestCase):
         commands = [json.loads(x) for x in log.read_text().splitlines()]
         self.assertEqual(commands[0][-1], 'http://127.0.0.1:3080/?token=one')
         self.assertEqual(commands[1][-1], 'http://127.0.0.1:3080/?token=two')
-        self.assertIn('--kiosk', commands[1])
+        self.assertIn('--start-maximized', commands[1])
+        self.assertNotIn('--kiosk', commands[1])
         self.assertFalse(any('no-sandbox' in arg for cmd in commands for arg in cmd))
         child.terminate()
         child.wait(timeout=10)

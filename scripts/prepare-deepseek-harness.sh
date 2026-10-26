@@ -14,7 +14,7 @@ repo=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
 templates="$repo/target/deepseek-harness"
 node_version=24.22.1
 node_sha=dbabf7a1cbf947e6059ffad2c27b80041db97dea1e553b62afdee7f13fca336e
-release=deepseek-harness-0.2.1-rc.2-node24.22.1-kiosk1-linux-arm64
+release=deepseek-harness-0.2.1-rc.2-node24.22.1-kiosk3-linux-arm64
 mkdir -p -- "$1"
 output=$(cd -- "$1" && pwd)
 archive="$output/$release.tar.gz"
@@ -32,6 +32,21 @@ cp "$templates/package.json" "$templates/package-lock.json" "$bundle/app/"
 export PATH="$bundle/node/bin:$PATH"
 (cd "$bundle/app" && npm ci --omit=dev --ignore-scripts --no-audit --no-fund \
     --registry=https://registry.npmjs.org)
+# Published dependencies include tens of thousands of development-only type
+# declarations and source maps. Keep runtime JS/TS, assets and licenses intact.
+python3 - "$bundle/app/node_modules" <<'PYTYPES'
+from pathlib import Path
+import sys
+root = Path(sys.argv[1])
+suffixes = ('.d.ts', '.d.cts', '.d.mts', '.js.map', '.cjs.map', '.mjs.map',
+            '.css.map', '.ts.map', '.cts.map', '.mts.map')
+removed = 0
+for path in root.rglob('*'):
+    if path.is_file() and path.name.endswith(suffixes):
+        path.unlink()
+        removed += 1
+print(f'Omitted {removed} development-only declarations and source maps.')
+PYTYPES
 cp "$templates"/tono-dsh{,-server,-browser,-session} "$bundle/bin/"
 cp "$templates/deepseek-harness.service" "$bundle/"
 cp "$repo/target/services/tono-kiosk/tono-kiosk-start" "$bundle/system/"

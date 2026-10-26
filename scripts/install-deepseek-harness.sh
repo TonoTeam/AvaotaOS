@@ -10,7 +10,7 @@ if [[ $(uname -s) != Linux || $(uname -m) != aarch64 || $(id -u) == 0 ]]; then
     exit 2
 fi
 archive=$(readlink -f -- "$1")
-release=deepseek-harness-0.2.1-rc.2-node24.22.1-kiosk1-linux-arm64
+release=deepseek-harness-0.2.1-rc.2-node24.22.1-kiosk3-linux-arm64
 read -r expected _ < "$archive.sha256"
 [[ $expected =~ ^[0-9a-f]{64}$ ]] || { echo 'Invalid archive checksum.' >&2; exit 1; }
 actual=$(sha256sum "$archive")
@@ -41,7 +41,7 @@ if [[ -e "$destination" ]]; then
 else
     # Extract directly on the destination filesystem: no second 1 GiB copy on a TF card.
     python3 - "$archive" "$staging" "$release" <<'PY'
-import pathlib, shutil, sys, tarfile
+import os, pathlib, shutil, sys, tarfile
 archive, staging, release = sys.argv[1:]
 with tarfile.open(archive, 'r:gz') as tf:
     members = tf.getmembers()
@@ -49,9 +49,16 @@ with tarfile.open(archive, 'r:gz') as tf:
         p = pathlib.PurePosixPath(member.name)
         if p.is_absolute() or '..' in p.parts or not p.parts or p.parts[0] != release:
             raise SystemExit('Invalid bundle member: ' + member.name)
-    required = sum(m.size for m in members if m.isfile()) + 256 * 1024 * 1024
+    fs = os.statvfs(staging)
+    block = fs.f_frsize or fs.f_bsize
+    required = sum(((m.size + block - 1) // block) * block if m.isfile()
+                   else block for m in members) + 256 * 1024 * 1024
     if shutil.disk_usage(staging).free < required:
         raise SystemExit('Insufficient free space for installation plus 256 MiB reserve')
+    # Growing an ext4 partition does not guarantee enough inodes for npm trees.
+    if fs.f_files and fs.f_favail < len(members) + 4096:
+        raise SystemExit('Insufficient free inodes for installation plus 4096 reserve')
+    print(f'Extracting {len(members)} entries; capacity and inode checks passed.', flush=True)
     tf.extractall(staging, filter='data')
 PY
     candidate="$staging/$release"
@@ -82,6 +89,9 @@ mkdir -p "$HOME/deepseek-workspace" "$HOME/.local/share/deepseek-harness"
 chmod 700 "$HOME/.local/share/deepseek-harness"
 printf 'Installed: %s\n' "$destination"
 if [[ ${2:-} == --start ]]; then
+    # Minimal SSH/PAM sessions may not export the already-running user bus.
+    export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
+    export DBUS_SESSION_BUS_ADDRESS="${DBUS_SESSION_BUS_ADDRESS:-unix:path=$XDG_RUNTIME_DIR/bus}"
     systemctl --user daemon-reload
     systemctl --user enable deepseek-harness.service
     systemctl --user restart deepseek-harness.service

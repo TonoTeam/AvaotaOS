@@ -8,7 +8,12 @@ fi
 account=$1
 [[ $account =~ ^[a-z_][a-z0-9_-]*$ ]] || exit 2
 uid=$(id -u "$account")
-user_home=$(getent passwd "$account" | cut -d: -f6)
+# Buildroot's minimal userspace need not ship the getent utility.
+user_home=$(python3 - "$account" <<'PYHOME'
+import pwd, sys
+print(pwd.getpwnam(sys.argv[1]).pw_dir)
+PYHOME
+)
 [[ $uid != 0 && $user_home == /home/"$account" ]] || exit 2
 package="$user_home/.local/opt/deepseek-harness/current"
 [[ -x $package/bin/tono-dsh-browser && -f $package/browser.json && -f $package/system/tono-kiosk-start ]]
