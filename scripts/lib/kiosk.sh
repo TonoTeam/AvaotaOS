@@ -162,6 +162,7 @@ install_kiosk_session() {
     install -m 755 "$repo"/target/services/tono-kiosk/tono-kiosk-{start,session,stop} \
         "$root/usr/local/libexec/"
     install -m 755 "$repo/target/services/tono-kiosk/tono-gpu-probe" "$root/usr/local/libexec/"
+    install -m 755 "$repo/target/services/tono-kiosk/tono-hdmi-watch" "$root/usr/local/libexec/"
     if [[ ! -e $root/etc/default/tono-kiosk ]]; then
         printf '# auto probes GLES; software is the recovery mode.\nTONO_RENDERER=auto\n' \
             > "$root/etc/default/tono-kiosk"

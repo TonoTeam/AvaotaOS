@@ -297,6 +297,9 @@ class KioskTests(unittest.TestCase):
             self.assertNotIn('settings.modify.system', rule.read_text())
             scope = root / "etc/systemd/system/session-.scope.d/10-tono-kiosk.conf"
             self.assertEqual(scope.read_bytes(), (SERVICES / "session-scope.conf").read_bytes())
+            watcher = root / "usr/local/libexec/tono-hdmi-watch"
+            self.assertEqual(watcher.read_bytes(), (SERVICES / 'tono-hdmi-watch').read_bytes())
+            self.assertTrue(os.access(watcher, os.X_OK))
 
     def test_stop_keeps_session_alive_until_app_has_saved(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -351,13 +354,18 @@ class KioskTests(unittest.TestCase):
                 "systemctl": "#!/bin/sh\n", "xset": "#!/bin/sh\n",
                 "openbox": FAKE_DAEMON, "fcitx5": FAKE_DAEMON, "idle-session": FAKE_DAEMON,
                 "xinit": FAKE_XINIT, "tono-canvas": FAKE_APP,
+                "tono-hdmi-watch": FAKE_DAEMON,
                 "tono-kiosk-stop": (SERVICES / "tono-kiosk-stop").read_text().replace(
                     "attempt < 180", f"attempt < {attempts}"),
             }.items():
                 (fixtures / name).write_text(body)
                 (fixtures / name).chmod(0o755)
             # An idle session stands in for the time before the app has started.
-            session = fixtures / "idle-session" if idle else SERVICES / "tono-kiosk-session"
+            fixture_session = fixtures / 'tono-kiosk-session'
+            fixture_session.write_text((SERVICES / 'tono-kiosk-session').read_text().replace(
+                '/usr/local/libexec/tono-hdmi-watch', str(fixtures / 'tono-hdmi-watch')))
+            fixture_session.chmod(0o755)
+            session = fixtures / "idle-session" if idle else fixture_session
             script = (SERVICES / "tono-kiosk-start").read_text()
             for program, replacement in (
                     ("/usr/bin/xinit", fixtures / "xinit"),

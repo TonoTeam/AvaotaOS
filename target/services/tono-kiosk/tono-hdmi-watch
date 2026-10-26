@@ -1,0 +1,111 @@
+#!/usr/bin/env python3
+"""Recover the A1 BSP's connected-but-disabled HDMI output in a kiosk session."""
+# SPDX-License-Identifier: GPL-3.0
+import argparse
+import fcntl
+import os
+from pathlib import Path
+import re
+import signal
+import subprocess
+import time
+
+SOURCE = Path('/sys/class/hdmi/hdmi/attr/hdmi_source')
+DRM = Path('/sys/class/drm')
+
+
+def log(message):
+    print('tono-hdmi-watch: ' + message, flush=True)
+
+
+def output_stuck(source, statuses):
+    # This BSP has one HDMI transmitter. Do not guess on other display stacks.
+    if statuses != ['connected']:
+        return False
+    section = source.partition('[drv state]')[2].split('[dw ctrl]')[0]
+    for line in section.splitlines():
+        fields = [field.strip() for field in line.split('|')]
+        if len(fields) >= 7 and fields[1] == 'state':
+            # clock | output | thread | HPD state | mask
+            return fields[3] == 'off' and fields[5] == 'in'
+    return False
+
+
+def needs_recovery():
+    try:
+        statuses = [path.read_text().strip()
+                    for path in sorted(DRM.glob('card*-HDMI-A-*/status'))]
+        return output_stuck(SOURCE.read_text(), statuses)
+    except OSError:
+        return False
+
+
+def xrandr(*args):
+    result = subprocess.run(['xrandr', *args], text=True, capture_output=True,
+                            timeout=8, check=True)
+    return result.stdout
+
+
+def recover():
+    # Use Xorg's output name (HDMI-1), not the kernel's name (HDMI-A-1).
+    query = xrandr('--query')
+    outputs = re.findall(r'^(HDMI\S*) connected\b', query, re.MULTILINE)
+    if len(outputs) != 1 or not needs_recovery():
+        return
+    output = outputs[0]
+    log(f're-enabling {output}: HPD connected but BSP output is off')
+    try:
+        xrandr('--output', output, '--off')
+    finally:
+        # Always attempt enable, including after an off-command failure/timeout.
+        xrandr('--output', output, '--auto')
+
+
+class RecoveryGate:
+    """Debounce the fault; rate-limit retries if the display cannot recover."""
+    def __init__(self):
+        self.samples = 0
+        self.retry_at = 0
+
+    def ready(self, stuck, now):
+        if not stuck:
+            self.samples = 0
+            self.retry_at = 0
+            return False
+        self.samples += 1
+        if self.samples < 2 or now < self.retry_at:
+            return False
+        self.samples = 0
+        self.retry_at = now + 10
+        return True
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--session-pid', type=int, default=os.getppid())
+    args = parser.parse_args()
+    session_dir = Path(os.environ['XDG_RUNTIME_DIR']) / 'tono-kiosk'
+    with (session_dir / 'hdmi-watch.lock').open('w') as lock:
+        try:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            return
+        # A live attachment also exits when its original kiosk session ends.
+        session = Path(f'/proc/{args.session_pid}')
+        def stop(signum, frame):
+            raise SystemExit(0)
+        signal.signal(signal.SIGTERM, stop)
+        signal.signal(signal.SIGINT, stop)
+        gate = RecoveryGate()
+        log('watching BSP HDMI output')
+        while session.exists():
+            if gate.ready(needs_recovery(), time.monotonic()):
+                try:
+                    recover()
+                except (OSError, subprocess.SubprocessError) as error:
+                    log(f'recovery failed; retry in 10 seconds: {error}')
+            time.sleep(1)
+
+
+if __name__ == '__main__':
+    main()

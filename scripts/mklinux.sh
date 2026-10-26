@@ -110,6 +110,14 @@ compile_linux()
         ${MAKE} ARCH=${ARCH} CROSS_COMPILE=${KERNEL_GCC} menuconfig
         cat .config > ${workspace}/user_defconfig
     fi
+    # Apply board requirements to both upstream and cached/user configurations.
+    if [[ -n ${LINUX_CONFIG_ENABLE:-} ]]; then
+        local option
+        for option in ${LINUX_CONFIG_ENABLE}; do
+            ./scripts/config --enable "$option"
+        done
+        ${MAKE} ARCH=${ARCH} CROSS_COMPILE=${KERNEL_GCC} olddefconfig
+    fi
     ${MAKE} ARCH=${ARCH} CROSS_COMPILE=${KERNEL_GCC} -j$(nproc)
     if [ -d ${workspace}/deb-data ];then
         rm -rf ${workspace}/deb-data

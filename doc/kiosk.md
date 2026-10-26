@@ -72,6 +72,12 @@ sudo systemctl restart tono-kiosk
 
 Openbox 保证文件对话框、输入法候选框和全屏之间的焦点交接；不启动面板或桌面。保留 F11、Escape 和 Alt+F4 等开发操作。App 退出会重启整个图形会话；一分钟内连续失败五次会停止重试，可从 SSH 查看日志并重启服务。tty1 不运行登录提示，串口和其他终端继续可用。
 
+`tono-hdmi-watch` 随图形会话以普通用户启动，每秒检查一次 A1 BSP 的 HDMI 状态。部分 5.15 BSP 在拔线时关闭硬件输出，但 Xorg 仍保留已启用的 CRTC，插回相同屏幕后不会重新设置模式。监测器仅在唯一 HDMI 接口为 `connected`、BSP 的 HPD 为 `in` 且实际 `output` 为 `off`，连续两次采样确认后，通过当前会话的 `xrandr` 关闭再启用输出，使用屏幕首选模式。健康输出不切换；失败重试间隔至少 10 秒；快速拔插即使未采到断开也可恢复。程序使用会话锁避免重复实例，会话结束时停止，不重启应用。它是此 BSP 的用户态恢复措施，不修改内核，也不处理多 HDMI 屏幕或其他驱动状态格式。
+
+验收时保持屏幕供电，拔出 HDMI 约 3 秒再插回，确认数秒内恢复；再测试一次快速拔插。检查日志中的 `tono-hdmi-watch: re-enabling HDMI-1`，并确认 Xorg 和应用 PID 未改变。Buildroot 兼容运行环境应将监测器和会话脚本安装在 `/opt/tono-runtime/usr/local/libexec/`；直接运行在 Ubuntu 根目录的镜像则位于 `/usr/local/libexec/`。
+
+2026-10-26，在 `tono-a527`（Buildroot 2026.08、5.15.154-ga464bc4feaff、兼容运行环境中的 Xorg/Openbox、微雪 2560×1600 独立供电屏）部署并热加载验证。用户实体拔插后确认画面自动恢复；内核单调时间记录 HPD 插入为 2753.560849 秒、输出启用为 2755.980146 秒，恢复约 2.42 秒。Xorg PID 561、App PID 578 均未改变，未重启系统或应用。重复启动监测器正常退出，没有产生第二实例。原会话脚本备份于设备 `/var/backups/tono-hdmi-20261026.7XpcNB/`。本次未重启验证开机加载，也未进行快速拔插的单独实机验收；相关故障判定、去抖、失败重试和关闭命令失败后仍尝试启用的行为已通过主机测试。
+
 ```sh
 systemctl status tono-kiosk.service
 journalctl -b -u tono-kiosk.service
