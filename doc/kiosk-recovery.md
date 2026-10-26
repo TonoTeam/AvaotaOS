@@ -59,6 +59,22 @@ sudo systemctl start tono-kiosk.service
 
 自定义用户名时调整 `--data-dir`。备份和报告位于数据目录内权限为 `0700` 的 `.index-recovery-*` 目录。损坏索引中的原编辑时间与删除状态已无法确认，恢复后编辑时间记为未知，并可能重新显示原本被删除的画板。工具仅支持此 Linux 版的 2048×2560 存档、每副本 4 MiB 的布局；其余损坏模式需要单独分析。
 
+## USB 触摸屏已识别但没有触摸事件（2026-10-26）
+
+`tono-a527` 的 Buildroot 2026.08 镜像使用 `5.15.154-ga464bc4feaff` BSP 内核。微雪 `0712:000a` 的 USB 连接、udev 的 `ID_INPUT_TOUCHSCREEN=1` 和 Xorg libinput 加载均正常，但内核配置为 `# CONFIG_HID_MULTITOUCH is not set`，设备绑定 `hid-generic`。用户连续点击滑动期间，50 秒只读 evdev 采样收到 0 个事件。HID 描述符包含多点触摸 Contact ID，设备 modalias 为 `hid:b0003g0004v00000712p0000000A`。
+
+从同一提交 `a464bc4feaff7b102dac6362b44ac3303ec7cae1` 的原版 `drivers/hid/hid-multitouch.c`、`hid-ids.h`，使用原始 `linux-headers-sun55i-t527-bsp_0.3.0.4+test.20261015_arm64.deb` 中的头文件及 Module.symvers，单独编译模块。构建目录为本机构建容器 `avaota-a1-kiosk-build` 中的 `/work/tono-touch-20261026/`；未修改驱动源码，没有强制忽略模块版本。模块 vermagic 与运行内核及现有模块一致：`5.15.154-ga464bc4feaff SMP preempt mod_unload aarch64`。
+
+加载后设备自动切换到 `hid-multitouch`；45 秒采样收到 2369 个事件，包括 `BTN_TOUCH`、`ABS_MT_SLOT`、`ABS_MT_POSITION_X/Y` 和 `ABS_MT_TRACKING_ID`。用户确认触控恢复正常。Xorg 和 App PID 保持 561、578，未重启系统或应用。
+
+已部署到设备：
+
+- `/lib/modules/5.15.154-ga464bc4feaff/updates/hid-multitouch.ko`，SHA-256 为 `39490208c93b1e53599b59b1453fb80733e604978405160fc2eb8b6e0e055fe5`。
+- 已执行 `depmod -a`；`/etc/modules-load.d/tono-touch.conf` 自动加载 `hid-multitouch`，`modprobe --show-depends` 已确认解析到该模块。未单独重启验证。
+- 本地 `build_dir/touch-20261026/` 保留模块、对应驱动源码及初始诊断记录，不纳入 Git。
+
+今后的 A1 BSP 内核构建会在默认配置、用户配置及 menuconfig 后启用 `CONFIG_HID_MULTITOUCH=y`。复用旧内核包或 Buildroot 的 BSP 缓存不会自动补齐驱动，需要重新构建内核，或安装与运行内核精确匹配的模块。本次外置模块只用于上述内核版本。
+
 ## 本次验证范围
 
 - 在完整镜像副本中模拟损坏的用户组、NSS、App、软件包数据库和 App 元数据，验证备份回退、参考文件回退、重装及画板保留；另验证 initramfs 的挂载、同步、卸载和正常启动配置恢复流程。

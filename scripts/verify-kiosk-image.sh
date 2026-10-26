@@ -89,6 +89,10 @@ grep -q 'Option "AccelMethod" "glamor"' "$root/etc/X11/tono-kiosk-hardware/21-to
 grep -qx 'TONO_RENDERER=auto' "$root/etc/default/tono-kiosk"
 grep -qx 'SupplementaryGroups=video render' "$root/etc/systemd/system/tono-kiosk.service"
 test -x "$root/usr/local/libexec/tono-gpu-probe"
+test -x "$root/usr/local/libexec/tono-hdmi-watch"
+test -x "$root/usr/bin/python3"
+test -x "$root/usr/bin/xrandr"
+grep -q '/usr/local/libexec/tono-hdmi-watch' "$root/usr/local/libexec/tono-kiosk-session"
 test "$(chroot "$root" dpkg-query -W -f='${db:Status-Status}' libgles2)" = installed
 test -d "$root/lib/firmware"
 test -e "$root/usr/lib/systemd/user/pipewire.socket"

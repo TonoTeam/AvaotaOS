@@ -1,4 +1,4 @@
-adduser apt ca-certificates locales tzdata sudo bash-completion
+adduser apt ca-certificates locales tzdata sudo bash-completion python3-minimal
 systemd-sysv systemd-timesyncd systemd-resolved libpam-systemd dbus-user-session apparmor
 initramfs-tools linux-base kmod udev e2fsprogs dosfstools fdisk parted mmc-utils u-boot-tools
 netplan.io network-manager polkitd wpasupplicant wireless-regdb iw rfkill openssh-server

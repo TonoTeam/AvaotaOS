@@ -3,12 +3,13 @@ set -euo pipefail
 export QT_QPA_PLATFORM=xcb QT_IM_MODULE=fcitx GTK_IM_MODULE=fcitx XMODIFIERS=@im=fcitx
 export LANG="${LANG:-C.UTF-8}"
 session_dir="$XDG_RUNTIME_DIR/tono-kiosk"
-app_pid="" wm_pid="" ime_pid=""
+app_pid="" wm_pid="" ime_pid="" hdmi_pid=""
 cleanup() {
     local status=$?
     # xinit can return success even when its client exits unsuccessfully.
     printf '%s\n' "$status" > "$session_dir/session.exit"
     rm -f "$session_dir/app.pid"
+    [[ -z $hdmi_pid ]] || kill "$hdmi_pid" 2>/dev/null || true
     [[ -z $ime_pid ]] || kill "$ime_pid" 2>/dev/null || true
     [[ -z $wm_pid ]] || kill "$wm_pid" 2>/dev/null || true
 }
@@ -22,6 +23,8 @@ fcitx5 &
 ime_pid=$!
 xset s off
 xset -dpms || true
+/usr/local/libexec/tono-hdmi-watch &
+hdmi_pid=$!
 render_args=(--software-rendering)
 if [[ ${TONO_RENDERER:-software} == hardware ]]; then
     render_args=(--opengl-es)
