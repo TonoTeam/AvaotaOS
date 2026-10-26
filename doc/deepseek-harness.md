@@ -121,6 +121,6 @@ sudo journalctl _SYSTEMD_USER_UNIT=deepseek-harness.service -n 80 --no-pager
 2026-10-26 已在 Avaota A1 / A527、Buildroot 2026.08 和 4 GB TF 卡上完成离线安装与启动切换。实机确认本机页面自动认证、Harness 服务重启后重新打开浏览器、图形会话正常停止，以及正常系统重启后自动恢复浏览器。
 Chromium 以 UID 1000 运行；渲染进程为 `NoNewPrivs=1`、`Seccomp=2`，未加入关闭沙盒的参数；GPU 进程已打开 DRM 设备。没有以此代替 GPU 性能或 WebGL 的专项测试。
 原 Harness 安装后约剩余 830 MiB、6200 个 inode；本次触屏补充依赖另占约 30 MiB、1400 个 inode，适合验证运行；创建包含大量依赖的项目时仍受这张 TF 卡的容量和 inode 限制。
-实机校时使用可达的 NTP 服务器修复，并验证 HTTPS 可连接模型服务；模型账号/API Key 由用户配置，尚未执行模型对话。触屏键盘通过独立测试页和 Harness 实际输入框验证：自动弹出、拼音候选选择、中英文切换、密码框、富文本、收起和图形会话重启。测试内容未发送给模型。音视频、Wi-Fi 重连和断电冷启动未在本次键盘改动中重测。
+实机校时使用可达的 NTP 服务器修复，并验证 HTTPS 可连接模型服务。API Key 已通过 Harness 内置凭据接口保存到设备本机（文件权限 0600），DeepSeek 官方模型接口鉴权通过；尚未执行模型对话。凭据及运行时配置不包含在安装包或 Git 提交中。触屏键盘通过独立测试页和 Harness 实际输入框验证：自动弹出、拼音候选选择、中英文切换、密码框、富文本、收起和图形会话重启。测试内容未发送给模型。音视频、Wi-Fi 重连和断电冷启动未在本次键盘改动中重测。
 
 参考：[DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)、[官方 Web 使用指南](https://deepseek-harness.github.io/deepseek-harness/en/guide/quickstart)、[Playwright 浏览器发行说明](https://playwright.dev/docs/browsers)。
