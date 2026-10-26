@@ -108,6 +108,33 @@ class ExportTests(unittest.TestCase):
         with mock.patch.object(runtime.subprocess, "check_output", return_value="tono-canvas\t1\tarm64"):
             return runtime.export_runtime(self.source, self.destination, self.app_deb, ["tono-canvas"])
 
+    def test_touch_generated_caches_are_exported(self):
+        paths = ["/usr/share/glib-2.0/schemas/gschemas.compiled",
+                 "/usr/share/mime/mime.cache",
+                 "/usr/lib/aarch64-linux-gnu/gtk-3.0/3.0.0/immodules.cache",
+                 "/usr/lib/aarch64-linux-gnu/gdk-pixbuf-2.0/2.10.0/loaders.cache"]
+        for path in paths:
+            self.file(path, "generated-cache")
+        self.export()
+        for path in paths:
+            self.assertEqual((self.destination / path.lstrip("/")).read_text(), "generated-cache")
+
+    def test_touch_export_omits_desktop_icons_but_keeps_keyboard_and_licenses(self):
+        with (self.source / "var/lib/dpkg/status").open("a") as stream:
+            stream.write(package("onboard"))
+        paths = ["/usr/share/icons/Humanity/actions/a.svg",
+                 "/usr/share/icons/Adwaita/actions/a.svg",
+                 "/usr/share/onboard/layouts/Compact.onboard",
+                 "/usr/share/doc/onboard/copyright"]
+        for path in paths:
+            self.file(path, "fixture")
+        self.file("/var/lib/dpkg/info/onboard.list", "\n".join(paths) + "\n")
+        with mock.patch.object(runtime.subprocess, "check_output", return_value="tono-canvas\t1\tarm64"):
+            runtime.export_runtime(self.source, self.destination, self.app_deb, ["tono-canvas", "onboard"])
+        self.assertFalse((self.destination / paths[0].lstrip("/")).exists())
+        for path in paths[1:]:
+            self.assertEqual((self.destination / path.lstrip("/")).read_text(), "fixture")
+
     def test_package_closure_merged_usr_generated_assets_and_licenses(self):
         (self.source / "usr/bin/tono-canvas").chmod(0o4755)
         result = self.export()

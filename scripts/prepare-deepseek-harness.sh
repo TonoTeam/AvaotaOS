@@ -14,7 +14,7 @@ repo=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
 templates="$repo/target/deepseek-harness"
 node_version=24.22.1
 node_sha=dbabf7a1cbf947e6059ffad2c27b80041db97dea1e553b62afdee7f13fca336e
-release=deepseek-harness-0.2.1-rc.2-node24.22.1-kiosk3-linux-arm64
+release=deepseek-harness-0.2.1-rc.2-node24.22.1-kiosk4-linux-arm64
 mkdir -p -- "$1"
 output=$(cd -- "$1" && pwd)
 archive="$output/$release.tar.gz"
@@ -47,7 +47,8 @@ for path in root.rglob('*'):
         removed += 1
 print(f'Omitted {removed} development-only declarations and source maps.')
 PYTYPES
-cp "$templates"/tono-dsh{,-server,-browser,-session} "$bundle/bin/"
+cp "$templates"/tono-dsh{,-server,-browser,-session,-keyboard} "$bundle/bin/"
+cp "$templates/tono_dsh_ime.py" "$bundle/bin/"
 cp "$templates/deepseek-harness.service" "$bundle/"
 cp "$repo/target/services/tono-kiosk/tono-kiosk-start" "$bundle/system/"
 cp "$templates/tono-deepseek-browser.apparmor" "$bundle/system/"

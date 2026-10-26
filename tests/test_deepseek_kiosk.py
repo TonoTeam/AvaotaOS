@@ -104,6 +104,8 @@ class BootHandoffTests(unittest.TestCase):
         self.assertEqual(commands[1][-1], 'http://127.0.0.1:3080/?token=two')
         self.assertIn('--start-maximized', commands[1])
         self.assertNotIn('--kiosk', commands[1])
+        self.assertIn('--force-device-scale-factor=2', commands[1])
+        self.assertIn('--force-renderer-accessibility', commands[1])
         self.assertFalse(any('no-sandbox' in arg for cmd in commands for arg in cmd))
         child.terminate()
         child.wait(timeout=10)

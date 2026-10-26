@@ -3,9 +3,9 @@
 # Export only the application dependency closure from a clean Ubuntu ARM64 base.
 set -euo pipefail
 usage() {
-    echo "Usage: $0 --base-rootfs BASE.tar.gz --app-deb APP.deb --output RUNTIME.tar.gz"
+    echo "Usage: $0 --base-rootfs BASE.tar.gz --app-deb APP.deb --output RUNTIME.tar.gz [--touch-browser]"
 }
-base="" app="" output=""
+base="" app="" output="" touch_browser=false
 while (($#)); do
     case "$1" in
         --base-rootfs|--app-deb|--output)
@@ -14,6 +14,7 @@ while (($#)); do
                 --base-rootfs) base=$2 ;; --app-deb) app=$2 ;; --output) output=$2 ;;
             esac
             shift 2 ;;
+        --touch-browser) touch_browser=true; shift ;;
         -h|--help) usage; exit 0 ;;
         *) usage >&2; exit 2 ;;
     esac
@@ -93,6 +94,11 @@ rm -f "$source_root/tmp/tono-canvas-buildroot.deb"
 cp "$app" "$source_root/tmp/tono-canvas-buildroot.deb"
 chroot "$source_root" apt-get update
 read -r -a seeds < <(python3 "$repo/scripts/buildroot-runtime.py" --default-seeds)
+if $touch_browser; then
+    seeds+=(onboard at-spi2-core fcitx5-frontend-gtk3 libglib2.0-bin python3-pyatspi)
+fi
+export_seeds=()
+for package in "${seeds[@]}"; do export_seeds+=(--seed "$package"); done
 packages=()
 for package in "${seeds[@]}"; do
     [[ $package == tono-canvas ]] || packages+=("$package")
@@ -101,7 +107,7 @@ DEBIAN_FRONTEND=noninteractive LC_ALL=C chroot "$source_root" \
     apt-get install -y --no-install-recommends /tmp/tono-canvas-buildroot.deb "${packages[@]}"
 chroot "$source_root" dpkg --audit
 python3 "$repo/scripts/buildroot-runtime.py" --source "$source_root" \
-    --destination "$runtime_root" --app-deb "$app"
+    --destination "$runtime_root" --app-deb "$app" "${export_seeds[@]}"
 install -d "$runtime_root/usr/local/libexec" "$runtime_root/etc/xdg/tono-kiosk"
 install -m 755 "$repo"/target/services/tono-kiosk/tono-kiosk-{start,session,stop} \
     "$repo/target/services/tono-kiosk/tono-gpu-probe" "$runtime_root/usr/local/libexec/"

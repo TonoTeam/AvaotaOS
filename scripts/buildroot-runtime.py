@@ -46,12 +46,27 @@ GENERATED_TREES = ("/etc/ssl/certs", "/var/cache/fontconfig")
 GENERATED_FILES = (
     "/etc/ld.so.cache", "/usr/lib/locale/locale-archive", "/etc/environment",
     "/etc/default/locale", "/etc/locale.conf", "/etc/localtime", "/etc/timezone",
+    "/usr/share/glib-2.0/schemas/gschemas.compiled",
+    "/usr/lib/aarch64-linux-gnu/gtk-3.0/3.0.0/immodules.cache",
+    "/usr/lib/aarch64-linux-gnu/gdk-pixbuf-2.0/2.10.0/loaders.cache",
+    *("/usr/share/mime/" + name for name in (
+        "mime.cache", "aliases", "globs", "globs2", "magic", "subclasses", "icons",
+        "generic-icons", "XMLnamespaces", "treemagic", "types", "version")),
 )
 LICENSE_PREFIXES = ("copyright", "copying", "license", "licence", "notice")
 VOLATILE_ALIASES = {
     "/var/run": {"/run"}, "/var/lock": {"/run/lock"},
     "/etc/mtab": {"/proc/mounts", "/proc/self/mounts"},
 }
+
+
+def optional_touch_asset(path):
+    # Onboard needs Adwaita and its own icons, not the full Ubuntu desktop theme.
+    # Omitting these optional assets saves over 11000 TF filesystem inodes.
+    prefixes = ("/usr/share/icons/Humanity", "/usr/share/icons/Humanity-Dark",
+                "/usr/share/icons/ubuntu-mono-dark", "/usr/share/icons/ubuntu-mono-light",
+                "/usr/share/icons/LoginIcons", "/usr/share/help", "/usr/share/sounds")
+    return any(path == prefix or path.startswith(prefix + "/") for prefix in prefixes)
 
 
 def trimmed_documentation(path):
@@ -275,6 +290,8 @@ def export_runtime(source, destination, app_deb, seeds):
     selected = package_set.closure(seeds)
     if "tono-canvas:arm64" not in selected:
         raise ValueError("runtime seeds must include tono-canvas")
+    touch = "onboard:arm64" in selected
+    omitted_touch = []
     allowed, owners, omitted = set(), {}, []
     for identifier in selected:
         record = package_set.packages[identifier]
@@ -285,6 +302,9 @@ def export_runtime(source, destination, app_deb, seeds):
             raise ValueError("missing dpkg file list: " + identifier)
         for line in package_list.read_text().splitlines():
             path = normal_path(line)
+            if touch and (optional_touch_asset(path) or trimmed_documentation(path)):
+                omitted_touch.append(path)
+                continue
             if not excluded(path):
                 physical, _ = guest_path(source, path, follow_final=False)
                 if excluded(normal_path("/" + str(physical.relative_to(source)))):
@@ -416,6 +436,7 @@ def export_runtime(source, destination, app_deb, seeds):
         "packages": [{"name": identifier, "version": package_set.packages[identifier]["Version"]} for identifier in selected],
         "files": dict(sorted(entries.items())),
         "exclusions": sorted(EXCLUDED_FILES) + list(EXCLUDED_PREFIXES),
+        "omitted_optional_touch_assets": sorted(set(omitted_touch)),
         "omitted_previously_trimmed_documentation": sorted(set(omitted)),
         "uninstalled_optional_locale_alias_targets": sorted(optional_locale_targets),
     }

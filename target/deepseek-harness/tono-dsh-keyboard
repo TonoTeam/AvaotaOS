@@ -1,0 +1,78 @@
+#!/usr/bin/env python3
+"""Touch keyboard for Chromium's AT-SPI editable controls (ordinary user)."""
+import os
+from pathlib import Path
+import sys
+import xml.etree.ElementTree as ET
+
+if os.getuid() == 0:
+    raise SystemExit('Run the keyboard as the desktop user.')
+if '--prepare' in sys.argv:
+    # Existing user preferences always win. This only initializes new profiles.
+    config = Path.home() / '.config/fcitx5/config'
+    config.parent.mkdir(parents=True, exist_ok=True)
+    if not config.exists():
+        config.write_text('[Behavior]\nActiveByDefault=True\nShareInputState=All\n')
+        config.chmod(0o600)
+    classic = config.parent / 'conf/classicui.conf'
+    classic.parent.mkdir(exist_ok=True)
+    if not classic.exists():
+        classic.write_text('Font=Sans 28\nMenuFont=Sans 20\n')
+        classic.chmod(0o600)
+    raise SystemExit(0)
+
+# These are session defaults; do not overwrite the user's desktop dconf database
+# or depend on a dconf daemon outside the Buildroot GUI compatibility root.
+os.environ['GSETTINGS_BACKEND'] = 'memory'
+os.environ['GDK_SCALE'] = '1'
+os.environ['GDK_DPI_SCALE'] = '1'
+os.environ['PYTHONDONTWRITEBYTECODE'] = '1'
+import gi
+gi.require_version('Gtk', '3.0')
+gi.require_version('Gdk', '3.0')
+from gi.repository import Gio, Gdk, GLib
+
+runtime = Path(os.environ['XDG_RUNTIME_DIR']) / 'tono-touch-keyboard'
+runtime.mkdir(mode=0o700, exist_ok=True)
+layouts = Path('/usr/share/onboard/layouts')
+tree = ET.parse(layouts / 'Compact.onboard')
+for node in tree.iter():
+    for attribute in ('filename', 'file'):
+        if attribute in node.attrib:
+            node.set(attribute, str(layouts / node.get(attribute)))
+    if node.tag == 'key' and node.get('id') == 'LWIN':
+        node.attrib.clear()
+        node.attrib.update(id='IME', svg_id='LWIN', label='中/英',
+                           script='tono_dsh_ime', group='bottomrow')
+layout = runtime / 'TonoChinese.onboard'
+tree.write(layout, encoding='utf-8', xml_declaration=True)
+screen = Gdk.Screen.get_default()
+width, height = screen.get_width(), screen.get_height()
+keyboard_height = max(260, round(min(width, height) * .38))
+settings = {
+    'org.gnome.desktop.interface': {'toolkit-accessibility': True},
+    'org.onboard': {'layout': str(layout), 'theme': 'Nightshade',
+                    'show-status-icon': False, 'start-minimized': True},
+    'org.onboard.auto-show': {'enabled': True, 'hide-on-key-press': False,
+                             'tablet-mode-detection-enabled': False},
+    # Onboard 1.4.1's native XInput path segfaults on this A527 runtime.
+    # GTK handles the WaveShare touch events and still uses XTest to type.
+    'org.onboard.keyboard': {'input-event-source': 'GTK'},
+    'org.onboard.window': {'docking-enabled': True, 'docking-shrink-workarea': True,
+                          'force-to-top': True, 'background-transparency': 0.0},
+    'org.onboard.typing-assistance.word-suggestions': {'enabled': False, 'auto-learn': False},
+    'org.onboard.icon-palette': {'in-use': True},
+}
+for orientation in ('portrait', 'landscape'):
+    settings['org.onboard.window.' + orientation] = {
+        'dock-height': keyboard_height, 'dock-expand': True}
+    settings['org.onboard.icon-palette.' + orientation] = {
+        'x': max(0, width - 110), 'y': 240, 'width': 96, 'height': 96}
+for schema, values in settings.items():
+    obj = Gio.Settings.new(schema)
+    for key, value in values.items():
+        current = obj.get_value(key)
+        obj.set_value(key, GLib.Variant(current.get_type_string(), value))
+# Onboard consumes the same in-process settings backend.
+from Onboard.OnboardGtk import OnboardGtk
+OnboardGtk()

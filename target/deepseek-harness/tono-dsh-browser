@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Keep the browser authenticated across Harness restarts."""
 import json
+import math
 import os
 from pathlib import Path
 import signal
@@ -51,6 +52,11 @@ def main():
                  '--disable-infobars', '--lang=zh-CN',
                  '--disable-session-crashed-bubble', '--ozone-platform=x11',
                  '--password-store=basic', '--user-data-dir=' + str(profile)]
+    scale = float(environment.get('TONO_BROWSER_SCALE', '2'))
+    if not math.isfinite(scale) or not 1 <= scale <= 3:
+        raise SystemExit('TONO_BROWSER_SCALE must be between 1 and 3.')
+    arguments += [f'--force-device-scale-factor={scale:g}',
+                  '--force-renderer-accessibility']
     if environment.get('TONO_RENDERER') == 'software':
         arguments.append('--disable-gpu')
     child = None

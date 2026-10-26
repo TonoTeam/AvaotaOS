@@ -3,11 +3,14 @@ set -euo pipefail
 export QT_IM_MODULE=fcitx GTK_IM_MODULE=fcitx XMODIFIERS=@im=fcitx
 export LANG="${LANG:-C.UTF-8}"
 session_dir="$XDG_RUNTIME_DIR/tono-kiosk"
-wm_pid='' ime_pid=''
+wm_pid='' ime_pid='' keyboard_pid='' a11y_pid=''
+bin=$(dirname -- "$0")
 cleanup() {
     local status=$?
     printf '%s\n' "$status" > "$session_dir/session.exit"
     rm -f "$session_dir/app.pid"
+    [[ -z $keyboard_pid ]] || kill "$keyboard_pid" 2>/dev/null || true
+    [[ -z $a11y_pid ]] || kill "$a11y_pid" 2>/dev/null || true
     [[ -z $ime_pid ]] || kill "$ime_pid" 2>/dev/null || true
     [[ -z $wm_pid ]] || kill "$wm_pid" 2>/dev/null || true
 }
@@ -17,6 +20,16 @@ systemctl --user start --no-block pipewire.socket pipewire-pulse.socket wireplum
 systemctl --user start deepseek-harness.service
 openbox --config-file /etc/xdg/tono-kiosk/openbox.xml &
 wm_pid=$!
+# AT-SPI must run inside the GUI root, rather than the native Buildroot bus.
+if [[ -x /usr/bin/onboard && -x /usr/libexec/at-spi-bus-launcher ]]; then
+    "$bin/tono-dsh-keyboard" --prepare
+    /usr/libexec/at-spi-bus-launcher --launch-immediately --a11y=1 &
+    a11y_pid=$!
+    "$bin/tono-dsh-keyboard" &
+    keyboard_pid=$!
+else
+    echo 'Touch keyboard dependencies missing; see doc/deepseek-harness.md.' >&2
+fi
 fcitx5 &
 ime_pid=$!
 xset s off

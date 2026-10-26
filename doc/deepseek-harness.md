@@ -3,7 +3,7 @@
 该分支提供新的设备启动方式：
 
 ```text
-systemd → Xorg + Openbox + Fcitx5 → Chromium 最大化（保留导航栏）
+systemd → Xorg + Openbox + Fcitx5 + Onboard → Chromium 最大化（保留导航栏）
             ↑                         ↓
       原有显示和音频配置       本机 DeepSeek Harness :3080
 ```
@@ -54,7 +54,7 @@ bash scripts/prepare-deepseek-harness.sh /absolute/path/dsh-kiosk-artifacts
 scp dsh-kiosk-artifacts/* avaota@DEVICE_IP:~/
 ssh avaota@DEVICE_IP
 bash ~/install-deepseek-harness.sh \
-  ~/deepseek-harness-0.2.1-rc.2-node24.22.1-kiosk3-linux-arm64.tar.gz
+  ~/deepseek-harness-0.2.1-rc.2-node24.22.1-kiosk4-linux-arm64.tar.gz
 sudo bash ~/enable-deepseek-kiosk.sh avaota --restart
 ```
 
@@ -62,6 +62,34 @@ sudo bash ~/enable-deepseek-kiosk.sh avaota --restart
 如果只想在下次开机生效，省略 `--restart`。切换器先备份原启动脚本和已有配置，备份目录打印在终端。
 普通用户安装器不使用 sudo；只有系统启动入口切换需要管理员权限。
 重复安装会校验现有 release，保留模型配置、会话和浏览器配置。
+
+## 触屏中文输入与显示大小
+
+浏览器默认使用 `--force-device-scale-factor=2`，把文字、导航栏和按钮放大到 200%，保留屏幕原生分辨率。可通过 `tono-kiosk.service` 的 `Environment="TONO_BROWSER_SCALE=1.5"` 调整（支持 1～3），重启图形会话后生效。原有 `QT_SCALE_FACTOR` 不控制 Chromium。
+
+Onboard 监听 Chromium 的 AT-SPI 输入焦点：点击普通输入框、密码框或富文本编辑框，底部自动弹出键盘，并缩小窗口可用区域以避免遮挡输入框。键盘左下角 **中/英** 切换 Fcitx5 拼音；输入拼音后点候选字或空格确认。右上角 × 收起键盘，屏幕右上方悬浮键盘图标可手动打开。
+
+会话在图形运行时内启动无障碍总线，不需要完整 GNOME 桌面。键盘设置使用进程内 GSettings 后端，不修改用户桌面 dconf；关闭英语预测和学习。新建的 Fcitx5 配置默认使用拼音、28 号候选字，已有输入法配置保留。Onboard 1.4.1 的默认 XInput 后端在本机测试中发生崩溃，固定使用已验证的 GTK 事件后端，按键仍通过 XTest 送入浏览器。
+
+Ubuntu 24.04 ARM64 设备需要：
+
+```sh
+sudo apt-get install --no-install-recommends onboard at-spi2-core \
+  fcitx5-frontend-gtk3 libglib2.0-bin python3-pyatspi
+```
+
+Buildroot 设备不能在原生系统执行这条 apt 命令。新构建的 Ubuntu 图形兼容运行时应加入可选的 `--touch-browser`：
+
+```sh
+sudo bash scripts/buildroot-prepare-runtime.sh \
+  --base-rootfs ubuntu-base-24.04-arm64.tar.gz \
+  --app-deb tono-canvas_arm64.deb \
+  --output runtime-ubuntu2404-arm64-touch.tar.gz --touch-browser
+```
+
+导出器保留 GLib schema、GTK 输入模块、图像解码模块和 MIME 生成缓存；它们不全部出现在 dpkg 文件列表中，缺失会导致自动弹出失效或图标加载崩溃。只保留 Adwaita 与键盘自身图标，省去 Humanity、Ubuntu Mono 等桌面图标和帮助/提示音，减少一万多个文件。默认白板运行时的包清单不增加 Onboard。
+
+本次已在现有 Buildroot 设备补装最小键盘依赖并重新生成上述缓存，没有替换 Mesa、glibc 或现有 GPU 库。补充包、清单和测试截图留在本机 `build_dir/deepseek-harness/`，不提交到 Git。未安装依赖的设备会记录键盘缺失提示，浏览器仍能启动。
 
 ## 数据、网络与维护
 
@@ -92,7 +120,7 @@ sudo journalctl _SYSTEMD_USER_UNIT=deepseek-harness.service -n 80 --no-pager
 实际 ARM64 图形容器用于检查普通用户浏览器是否能加载 Harness、服务重启后是否重新进入页面，以及浏览器和服务能否正常停止。
 2026-10-26 已在 Avaota A1 / A527、Buildroot 2026.08 和 4 GB TF 卡上完成离线安装与启动切换。实机确认本机页面自动认证、Harness 服务重启后重新打开浏览器、图形会话正常停止，以及正常系统重启后自动恢复浏览器。
 Chromium 以 UID 1000 运行；渲染进程为 `NoNewPrivs=1`、`Seccomp=2`，未加入关闭沙盒的参数；GPU 进程已打开 DRM 设备。没有以此代替 GPU 性能或 WebGL 的专项测试。
-临时压缩包清理后剩余约 830 MiB，约 6200 个可用 inode，适合验证运行；创建包含大量依赖的项目时仍受这张 TF 卡的容量和 inode 限制。
-实机校时使用可达的 NTP 服务器修复，并验证 HTTPS 可连接模型服务；模型账号/API Key 由用户配置，尚未执行模型对话。中文输入、音视频、Wi-Fi 重连和断电冷启动也未在此次切换中重测。
+原 Harness 安装后约剩余 830 MiB、6200 个 inode；本次触屏补充依赖另占约 30 MiB、1400 个 inode，适合验证运行；创建包含大量依赖的项目时仍受这张 TF 卡的容量和 inode 限制。
+实机校时使用可达的 NTP 服务器修复，并验证 HTTPS 可连接模型服务；模型账号/API Key 由用户配置，尚未执行模型对话。触屏键盘通过独立测试页和 Harness 实际输入框验证：自动弹出、拼音候选选择、中英文切换、密码框、富文本、收起和图形会话重启。测试内容未发送给模型。音视频、Wi-Fi 重连和断电冷启动未在本次键盘改动中重测。
 
 参考：[DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)、[官方 Web 使用指南](https://deepseek-harness.github.io/deepseek-harness/en/guide/quickstart)、[Playwright 浏览器发行说明](https://playwright.dev/docs/browsers)。
