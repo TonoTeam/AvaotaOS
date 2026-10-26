@@ -4,6 +4,10 @@
 
 本仓库负责构建完整的 TF / SD 卡启动镜像，以及白板的启动、停止和系统维护。白板 App 在独立的 [Tono Canvas App 仓库](https://github.com/TonoTeam/tono-canvas-app) 开发，通过 ARM64 `.deb` 安装到镜像中；AI 服务端独立部署，地址在 App 中配置。
 
+## DeepSeek Harness 浏览器入口
+
+本开发分支另提供 [DeepSeek Harness 开机全屏浏览器模式](doc/deepseek-harness.md)。在现有 A527 系统安装离线包并启用后，设备上电直接进入本机 Harness，替代白板启动入口；支持自动认证和服务重启恢复。首次使用需配置模型，实机部署仍需连接开发板。下面保留原画板系统的构建与维护说明。
+
 ## 项目定位
 
 系统围绕一个白板应用配置，使用 `kiosk` 镜像类型：
@@ -141,6 +145,7 @@ sudo systemctl start tono-kiosk.service
 | [黑屏排查与系统文件恢复](doc/kiosk-recovery.md) | 启动故障定位、文件完整性检查与画板索引恢复 |
 | [镜像体积与功能验证](doc/kiosk-size-validation.md) | 精简规则及对应构建的体积、空间和功能验证记录 |
 | [Buildroot 构建与维护](doc/buildroot.md) | A527 Buildroot 系统核心、应用兼容运行时与完整镜像构建 |
+| [DeepSeek Harness 浏览器模式](doc/deepseek-harness.md) | 离线安装、开机全屏、自动认证与回退 |
 | [Buildroot 构建验证](doc/buildroot-validation.md) | 构建产物、软件回归及硬件验证范围 |
 | [GPU 加速验证](doc/kiosk-gpu-validation.md) | GLES / WebGL、软件恢复模式及完整镜像验收 |
 

@@ -10,6 +10,11 @@ xauth -f "$XAUTHORITY" add :0 . "$(mcookie)"
 # Probe as the same ordinary user and groups as Xorg and the app. A bounded
 # shader test rejects llvmpipe and broken GLES before choosing the display path.
 requested=${TONO_RENDERER:-auto}
+session_client=${TONO_KIOSK_SESSION:-/usr/local/libexec/tono-kiosk-session}
+[[ $session_client == /* ]] || {
+    echo "Invalid kiosk session executable: $session_client" >&2
+    exit 2
+}
 case "$requested" in
     auto)
         TONO_RENDERER=software
@@ -42,9 +47,9 @@ start_display() {
     local status=0 result_file="$XDG_RUNTIME_DIR/tono-kiosk/session.exit"
     rm -f "$result_file"
     (( !stopping )) || return 0
-    echo "Starting Tono Canvas: renderer=$TONO_RENDERER" >&2
+    echo "Starting kiosk: renderer=$TONO_RENDERER, session=$session_client" >&2
     # Relative names resolve under /etc/X11 and are allowed for rootless Xorg.
-    /usr/bin/xinit /usr/local/libexec/tono-kiosk-session -- \
+    /usr/bin/xinit "$session_client" -- \
         /usr/lib/xorg/Xorg :0 vt1 -configdir "tono-kiosk-$TONO_RENDERER" \
         -auth "$XAUTHORITY" -keeptty -nolisten tcp -noreset &
     xinit_pid=$!

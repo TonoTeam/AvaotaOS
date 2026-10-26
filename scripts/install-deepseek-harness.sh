@@ -10,7 +10,7 @@ if [[ $(uname -s) != Linux || $(uname -m) != aarch64 || $(id -u) == 0 ]]; then
     exit 2
 fi
 archive=$(readlink -f -- "$1")
-release=deepseek-harness-0.2.1-rc.2-node24.22.1-linux-arm64
+release=deepseek-harness-0.2.1-rc.2-node24.22.1-kiosk1-linux-arm64
 read -r expected _ < "$archive.sha256"
 [[ $expected =~ ^[0-9a-f]{64}$ ]] || { echo 'Invalid archive checksum.' >&2; exit 1; }
 actual=$(sha256sum "$archive")

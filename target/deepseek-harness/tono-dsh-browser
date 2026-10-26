@@ -1,0 +1,86 @@
+#!/usr/bin/env python3
+"""Keep the fullscreen browser authenticated across Harness restarts."""
+import json
+import os
+from pathlib import Path
+import signal
+import subprocess
+import sys
+import time
+from urllib.parse import urlsplit
+
+
+def read_launch(path):
+    try:
+        value = json.loads(path.read_text())
+        url = urlsplit(value['url'])
+        if not (url.scheme == 'http' and url.netloc == '127.0.0.1:3080'
+                and url.path == '/' and url.query and not url.fragment):
+            return None
+        if not isinstance(value['pid'], int) or value['pid'] <= 1:
+            return None
+        os.kill(value['pid'], 0)
+        return value['url']
+    except (OSError, ValueError, KeyError, TypeError):
+        return None
+
+
+def stop_browser(child):
+    if child is not None and child.poll() is None:
+        child.terminate()
+        try:
+            child.wait(timeout=15)
+        except subprocess.TimeoutExpired:
+            child.kill()
+            child.wait()
+
+
+def main():
+    if os.getuid() == 0:
+        raise SystemExit('The browser must run as an ordinary user.')
+    os.umask(0o077)
+    package = Path(__file__).resolve().parent.parent
+    manifest = json.loads((package / 'browser.json').read_text())
+    executable = package / manifest['executable']
+    state = Path(os.environ['XDG_RUNTIME_DIR']) / 'tono-deepseek-harness/launch.json'
+    profile = Path.home() / '.local/share/deepseek-harness-browser'
+    profile.mkdir(parents=True, exist_ok=True, mode=0o700)
+    environment = dict(os.environ)
+    environment['LD_LIBRARY_PATH'] = str(package / 'browser-libs') + ':' + environment.get('LD_LIBRARY_PATH', '')
+    arguments = [str(executable), '--kiosk', '--no-first-run', '--no-default-browser-check',
+                 '--disable-infobars', '--lang=zh-CN',
+                 '--disable-session-crashed-bubble', '--ozone-platform=x11',
+                 '--password-store=basic', '--user-data-dir=' + str(profile)]
+    if environment.get('TONO_RENDERER') == 'software':
+        arguments.append('--disable-gpu')
+    child = None
+    current_url = None
+    stopping = False
+
+    def stop(*_):
+        nonlocal stopping
+        stopping = True
+
+    signal.signal(signal.SIGTERM, stop)
+    signal.signal(signal.SIGINT, stop)
+    try:
+        while not stopping:
+            url = read_launch(state)
+            if url != current_url:
+                stop_browser(child)
+                child = None
+                current_url = url
+            if child is not None and child.poll() is not None:
+                if child.returncode:
+                    return child.returncode
+                child = None
+            if url and child is None:
+                child = subprocess.Popen(arguments + [url], env=environment)
+            time.sleep(0.5)
+        return 0
+    finally:
+        stop_browser(child)
+
+
+if __name__ == '__main__':
+    sys.exit(main())

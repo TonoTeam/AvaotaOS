@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+set -euo pipefail
+export QT_IM_MODULE=fcitx GTK_IM_MODULE=fcitx XMODIFIERS=@im=fcitx
+export LANG="${LANG:-C.UTF-8}"
+session_dir="$XDG_RUNTIME_DIR/tono-kiosk"
+wm_pid='' ime_pid=''
+cleanup() {
+    local status=$?
+    printf '%s\n' "$status" > "$session_dir/session.exit"
+    rm -f "$session_dir/app.pid"
+    [[ -z $ime_pid ]] || kill "$ime_pid" 2>/dev/null || true
+    [[ -z $wm_pid ]] || kill "$wm_pid" 2>/dev/null || true
+}
+trap cleanup EXIT
+systemctl --user import-environment DISPLAY XAUTHORITY XDG_CURRENT_DESKTOP QT_IM_MODULE XMODIFIERS
+systemctl --user start --no-block pipewire.socket pipewire-pulse.socket wireplumber.service
+systemctl --user start deepseek-harness.service
+openbox --config-file /etc/xdg/tono-kiosk/openbox.xml &
+wm_pid=$!
+fcitx5 &
+ime_pid=$!
+xset s off
+xset -dpms || true
+"$(dirname -- "$0")/tono-dsh-browser" &
+browser_pid=$!
+printf '%s\n' "$browser_pid" > "$session_dir/app.pid"
+wait "$browser_pid"

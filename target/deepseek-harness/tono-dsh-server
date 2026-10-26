@@ -1,0 +1,95 @@
+#!/usr/bin/env python3
+"""Publish the current local launch URL privately; never disable DSH authentication."""
+import json
+import os
+from pathlib import Path
+import re
+import selectors
+import signal
+import subprocess
+import sys
+import time
+from urllib.parse import urlsplit
+
+
+def valid_url(url):
+    parsed = urlsplit(url)
+    return (parsed.scheme == 'http' and parsed.netloc == '127.0.0.1:3080'
+            and parsed.path == '/' and bool(parsed.query) and not parsed.fragment)
+
+
+def main():
+    os.umask(0o077)
+    directory = Path(os.environ['XDG_RUNTIME_DIR']) / 'tono-deepseek-harness'
+    directory.mkdir(mode=0o700, exist_ok=True)
+    directory.chmod(0o700)
+    state = directory / 'launch.json'
+    state.unlink(missing_ok=True)
+    # Minimal systems lack xdg-user-dir. Use the upstream deployment override
+    # instead of changing global desktop settings or the user's saved profile.
+    patch = directory / 'device.patch.yml'
+    patch.write_text(json.dumps([{'id': 'workspace-controller', 'config': {
+        'documentsDirectory': str(Path.home() / 'deepseek-workspace')}}]) + '\n')
+    executable = Path(__file__).resolve().with_name('tono-dsh')
+    child = subprocess.Popen([str(executable), '--profile', 'web', '--patch', str(patch), '--no-open', '--host',
+                              '127.0.0.1', '--port', '3080'], stdout=subprocess.PIPE,
+                             stderr=subprocess.STDOUT, start_new_session=True)
+    stopping = None
+
+    def stop(*_):
+        nonlocal stopping
+        if stopping is None:
+            stopping = time.monotonic()
+            state.unlink(missing_ok=True)
+            try:
+                os.killpg(child.pid, signal.SIGTERM)
+            except ProcessLookupError:
+                pass
+
+    signal.signal(signal.SIGTERM, stop)
+    signal.signal(signal.SIGINT, stop)
+    selector = selectors.DefaultSelector()
+    selector.register(child.stdout, selectors.EVENT_READ)
+    buffered = b''
+    started = time.monotonic()
+    ready = False
+    try:
+        while child.poll() is None:
+            if not ready and time.monotonic() - started > 90:
+                print('Harness did not become ready within 90 seconds.', flush=True)
+                stop()
+            if stopping is not None and time.monotonic() - stopping > 20:
+                os.killpg(child.pid, signal.SIGKILL)
+                break
+            for key, _ in selector.select(timeout=0.25):
+                chunk = os.read(key.fileobj.fileno(), 65536)
+                if not chunk:
+                    selector.unregister(key.fileobj)
+                    continue
+                buffered += chunk
+                while b'\n' in buffered:
+                    line, buffered = buffered.split(b'\n', 1)
+                    text = line.decode('utf-8', errors='replace')
+                    match = re.search(r'dsh web:\s*(http://127\.0\.0\.1:3080/\S+)', text)
+                    if match and valid_url(match[1]) and stopping is None:
+                        temporary = directory / 'launch.tmp'
+                        temporary.write_text(json.dumps({'url': match[1], 'pid': child.pid}) + '\n')
+                        temporary.replace(state)
+                        ready = True
+                        print('DeepSeek Harness ready on 127.0.0.1:3080.', flush=True)
+                    else:
+                        print(re.sub(r'http://127\.0\.0\.1:3080/\?\S+',
+                                     'http://127.0.0.1:3080/[private]', text), flush=True)
+        code = child.wait(timeout=5)
+        return 0 if stopping is not None and ready else (code or 1)
+    finally:
+        state.unlink(missing_ok=True)
+        selector.close()
+        child.stdout.close()
+        if child.poll() is None:
+            os.killpg(child.pid, signal.SIGKILL)
+            child.wait()
+
+
+if __name__ == '__main__':
+    sys.exit(main())

@@ -1,0 +1,7 @@
+# Tono DeepSeek Harness browser namespace permission on Ubuntu 24.04.
+abi <abi/4.0>,
+include <tunables/global>
+
+profile tono-deepseek-browser /home/*/.local/opt/deepseek-harness/releases/*/browser/chromium-*/chrome-linux-arm64/chrome flags=(unconfined) {
+    userns,
+}

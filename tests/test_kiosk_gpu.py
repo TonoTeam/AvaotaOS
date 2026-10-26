@@ -10,7 +10,7 @@ START = REPO / 'target/services/tono-kiosk/tono-kiosk-start'
 
 
 class GpuSessionTests(unittest.TestCase):
-    def launch(self, requested, probe=0, hardware=0, client=None):
+    def launch(self, requested, probe=0, hardware=0, client=None, session=None):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             # Keep the production flow; replace external programs with fixtures.
@@ -30,9 +30,19 @@ class GpuSessionTests(unittest.TestCase):
             env = dict(os.environ, PATH=str(root) + ':' + os.environ['PATH'],
                        XDG_RUNTIME_DIR=directory, TONO_RENDERER=requested,
                        RUN_LOG=str(root / 'runs'))
+            if session is not None:
+                env['TONO_KIOSK_SESSION'] = session
             result = subprocess.run(['bash', '-c', script], env=env, capture_output=True, text=True)
             log = (root / 'runs').read_text() if (root / 'runs').exists() else ''
             return result, log
+
+    def test_alternative_browser_session_and_relative_path_rejection(self):
+        result, log = self.launch('software', session='/home/avaota/browser-session')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn('/home/avaota/browser-session --', log)
+        result, log = self.launch('software', session='relative-session')
+        self.assertEqual(result.returncode, 2)
+        self.assertEqual(log, '')
 
     def test_hardware_success_and_clean_exit_do_not_fallback(self):
         result, log = self.launch('auto')
