@@ -68,7 +68,7 @@ sudo sed -i 's/^TONO_RENDERER=.*/TONO_RENDERER=software/' /etc/default/tono-kios
 sudo systemctl restart tono-kiosk
 ```
 
-恢复自动模式将值改回 `auto`；`hardware` 用于诊断，跳过探测且不自动降级。配置错误直接报错。两套只读 Xorg 配置位于 `/etc/X11/tono-kiosk-{hardware,software}`，均指定 sun4i-drm 为主显示控制器，不依赖 card 编号。`tono-kiosk.service` 的 `SupplementaryGroups=video render` 仅赋予图形会话 DRM 访问权限；rootless Xorg 必须能重新打开主 DRM 节点才能为 DRI3 客户端传递认证 fd。默认用户的全局组成员不增加这些权限。WebEngine 沙盒保持开启；镜像的单应用 AppArmor 配置允许 Chromium 使用用户命名空间，不改变全局策略。实机内核仍须支持 Chromium 使用的命名空间和 seccomp。
+恢复自动模式将值改回 `auto`；`hardware` 用于诊断，跳过探测且不自动降级。配置错误直接报错。两套只读 Xorg 配置位于 `/etc/X11/tono-kiosk-{hardware,software}`，均指定 sun4i-drm 为主显示控制器，不依赖 card 编号。`tono-kiosk.service` 的 `SupplementaryGroups=video render input` 赋予图形会话 DRM 访问权限和触摸屏 evdev 节点的读权限（tono-canvas 1.1.14 起在低延迟模式下直接读触摸屏，绕开 libinput/Xorg 对触摸移动晚一帧的转发；没有该权限时退回 X 路径）；Xorg 以 `-nocursor` 启动，纯触摸设备不显示指针箭头。rootless Xorg 必须能重新打开主 DRM 节点才能为 DRI3 客户端传递认证 fd。默认用户的全局组成员不增加这些权限。WebEngine 沙盒保持开启；镜像的单应用 AppArmor 配置允许 Chromium 使用用户命名空间，不改变全局策略。实机内核仍须支持 Chromium 使用的命名空间和 seccomp。
 
 Openbox 保证文件对话框、输入法候选框和全屏之间的焦点交接；不启动面板或桌面。保留 F11、Escape 和 Alt+F4 等开发操作。App 退出会重启整个图形会话；一分钟内连续失败五次会停止重试，可从 SSH 查看日志并重启服务。tty1 不运行登录提示，串口和其他终端继续可用。
 

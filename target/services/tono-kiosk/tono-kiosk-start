@@ -44,9 +44,11 @@ start_display() {
     (( !stopping )) || return 0
     echo "Starting Tono Canvas: renderer=$TONO_RENDERER" >&2
     # Relative names resolve under /etc/X11 and are allowed for rootless Xorg.
+    # -nocursor: a touch-only kiosk shows no pointer arrow, which the server
+    # would otherwise paint as soon as a touch or a synthetic pointer moves it.
     /usr/bin/xinit /usr/local/libexec/tono-kiosk-session -- \
         /usr/lib/xorg/Xorg :0 vt1 -configdir "tono-kiosk-$TONO_RENDERER" \
-        -auth "$XAUTHORITY" -keeptty -nolisten tcp -noreset &
+        -auth "$XAUTHORITY" -keeptty -nolisten tcp -noreset -nocursor &
     xinit_pid=$!
     # A stop that arrived before the pid was known must still end this session.
     (( !stopping )) || stop_session
