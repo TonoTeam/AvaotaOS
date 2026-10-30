@@ -1,0 +1,89 @@
+#!/usr/bin/python3
+"""Configure the A527 OTG port as a persistent USB ACM login console."""
+from pathlib import Path
+import sys
+import time
+
+ROOT = Path('/sys/kernel/config/usb_gadget')
+GADGET = ROOT / 'avaota_serial'
+UDC = '4100000.udc-controller'
+PORT = Path('/sys/devices/platform/soc@3000000/10.usbc0')
+SERIAL = 'A527CONSOLE'
+
+def write(path, value):
+    path.write_text(value + '\n')
+
+def remove_gadget():
+    if not GADGET.exists():
+        return
+    if (GADGET / 'UDC').read_text().strip():
+        write(GADGET / 'UDC', '')
+    link = GADGET / 'configs/c.1/acm.usb0'
+    if link.is_symlink():
+        link.unlink()
+    for relative in ['configs/c.1/strings/0x409', 'configs/c.1',
+                     'functions/acm.usb0', 'strings/0x409']:
+        path = GADGET / relative
+        if path.exists():
+            path.rmdir()
+    GADGET.rmdir()
+
+def start():
+    deadline = time.monotonic() + 15
+    required = [ROOT, Path('/sys/class/udc') / UDC, PORT / 'usb_device']
+    while not all(path.exists() for path in required):
+        if time.monotonic() >= deadline:
+            raise RuntimeError('Timed out waiting for configfs and the A527 UDC')
+        time.sleep(0.2)
+    for other in ROOT.iterdir():
+        if other != GADGET and (other / 'UDC').read_text().strip() == UDC:
+            raise RuntimeError('UDC already used by ' + str(other))
+    created = not GADGET.exists()
+    if not created:
+        if (GADGET / 'strings/0x409/serialnumber').read_text().strip() != SERIAL:
+            raise RuntimeError('Refusing to replace an unfamiliar USB gadget')
+    try:
+        if created:
+            GADGET.mkdir()
+            for name, value in {'idVendor': '0x1d6b', 'idProduct': '0x0104',
+                                'bcdDevice': '0x0100', 'bcdUSB': '0x0200'}.items():
+                write(GADGET / name, value)
+            strings = GADGET / 'strings/0x409'
+            strings.mkdir()
+            for name, value in {'serialnumber': SERIAL, 'manufacturer': 'Avaota',
+                                'product': 'Avaota A527 USB Console'}.items():
+                write(strings / name, value)
+            config = GADGET / 'configs/c.1'
+            config.mkdir()
+            write(config / 'MaxPower', '2')
+            write(config / 'bmAttributes', '0xc0')
+            config_strings = config / 'strings/0x409'
+            config_strings.mkdir()
+            write(config_strings / 'configuration', 'USB serial login')
+            function = GADGET / 'functions/acm.usb0'
+            function.mkdir()
+            (config / 'acm.usb0').symlink_to(function)
+        if not (GADGET / 'UDC').read_text().strip():
+            write(GADGET / 'UDC', UDC)
+        # This vendor driver uses a sysfs read to force peripheral mode.
+        print((PORT / 'usb_device').read_text().strip())
+        if not Path('/dev/ttyGS0').exists():
+            raise RuntimeError('USB gadget did not create /dev/ttyGS0')
+        print('USB console ready on /dev/ttyGS0; serial=' + SERIAL)
+    except Exception:
+        if created:
+            remove_gadget()
+        raise
+
+def stop():
+    remove_gadget()
+    if (PORT / 'usb_otg').exists():
+        print((PORT / 'usb_otg').read_text().strip())
+
+if __name__ == '__main__':
+    if sys.argv[1:] == ['start']:
+        start()
+    elif sys.argv[1:] == ['stop']:
+        stop()
+    else:
+        raise SystemExit('Usage: avaota-otg-serial start|stop')

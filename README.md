@@ -110,6 +110,14 @@ build_dir/AvaotaOS-<版本>-noble-kiosk-arm64-avaota-a1.img.xz
 ssh avaota@DEVICE_IP
 ```
 
+Avaota A1 镜像默认启用 **OTG USB 串口登录**，无需网络。用数据线连接开发板的 OTG 接口与电脑，Mac 上执行：
+
+```sh
+screen /dev/cu.usbmodemA527CONSOLE1 115200
+```
+
+按回车显示登录提示，使用构建时设置的普通用户及密码（默认 `avaota` / `avaota`）。重启后自动恢复；Linux 主机通常显示为 `/dev/ttyACM0`。这是系统启动后的 USB 登录终端，早期启动日志仍使用板载 UART。配置、禁用方法和验收记录见 [OTG 串口登录](doc/otg-serial.md)。
+
 查看应用会话和本次启动日志：
 
 ```sh

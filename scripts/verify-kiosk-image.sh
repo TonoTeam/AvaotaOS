@@ -62,9 +62,19 @@ grep -qx 'DESKTOP=kiosk' "$root/etc/avaota-release"
 test "$(systemctl --root="$root" get-default)" = multi-user.target
 test "$(systemctl --root="$root" is-enabled tono-kiosk.service)" = enabled
 test "$(systemctl --root="$root" is-enabled tono-wifi.service)" = enabled
+test "$(systemctl --root="$root" is-enabled avaota-otg-serial.service)" = enabled
+test "$(systemctl --root="$root" is-enabled serial-getty@ttyGS0.service)" = enabled
 test "$(systemctl --root="$root" is-enabled getty@tty1.service || true)" = masked
 test ! -e "$root/etc/systemd/system/display-manager.service"
-systemd-analyze --root="$root" verify tono-kiosk.service tono-wifi.service
+systemd-analyze --root="$root" verify tono-kiosk.service tono-wifi.service \
+    avaota-otg-serial.service serial-getty@ttyGS0.service
+test -x "$root/usr/local/sbin/avaota-otg-serial"
+test -x "$root/sbin/agetty"
+cmp "$repo/target/services/avaota-otg/avaota-otg-serial" "$root/usr/local/sbin/avaota-otg-serial"
+cmp "$repo/target/services/avaota-otg/avaota-otg-serial.service" \
+    "$root/etc/systemd/system/avaota-otg-serial.service"
+cmp "$repo/target/services/avaota-otg/serial-getty.conf" \
+    "$root/etc/systemd/system/serial-getty@ttyGS0.service.d/otg.conf"
 
 user=$(sed -n 's/^User=//p' "$root/etc/systemd/system/tono-kiosk.service.d/user.conf")
 uid=$(chroot "$root" id -u "$user")
@@ -164,6 +174,10 @@ done
 config=$(find "$boot" -maxdepth 1 -name 'config-*' -print -quit)
 test -n "$config"
 for option in USER_NS NAMESPACES SECCOMP SECCOMP_FILTER; do
+    grep -qx "CONFIG_${option}=y" "$config"
+done
+# Catch reused kernel packages that predate the default USB console.
+for option in USB_GADGET USB_CONFIGFS USB_CONFIGFS_ACM USB_SUNXI_UDC0 USB_SUNXI_USB_MANAGER; do
     grep -qx "CONFIG_${option}=y" "$config"
 done
 python3 - "$image" "$root" <<'PY'

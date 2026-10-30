@@ -1,0 +1,16 @@
+[Unit]
+Description=Avaota A527 OTG USB serial console
+Requires=sys-kernel-config.mount
+After=sys-kernel-config.mount
+Before=serial-getty@ttyGS0.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/sbin/avaota-otg-serial start
+ExecStop=/usr/local/sbin/avaota-otg-serial stop
+TimeoutStartSec=30
+TimeoutStopSec=15
+
+[Install]
+WantedBy=multi-user.target

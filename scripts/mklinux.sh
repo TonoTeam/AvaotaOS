@@ -117,6 +117,12 @@ compile_linux()
             ./scripts/config --enable "$option"
         done
         ${MAKE} ARCH=${ARCH} CROSS_COMPILE=${KERNEL_GCC} olddefconfig
+        for option in ${LINUX_CONFIG_ENABLE}; do
+            if ! grep -qx "CONFIG_${option}=y" .config; then
+                echo "Required board option CONFIG_${option}=y was disabled by Kconfig dependencies." >&2
+                exit 1
+            fi
+        done
     fi
     ${MAKE} ARCH=${ARCH} CROSS_COMPILE=${KERNEL_GCC} -j$(nproc)
     if [ -d ${workspace}/deb-data ];then

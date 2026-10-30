@@ -130,11 +130,12 @@ python3 tests/test_kiosk.py
 python3 tests/test_kiosk_board_index.py
 python3 tests/test_kiosk_size.py
 python3 tests/test_kiosk_gpu.py
+python3 tests/test_otg.py
 bash -n build_all.sh scripts/mkrootfs.sh scripts/pack.sh scripts/lib/kiosk.sh
 sudo bash scripts/verify-kiosk-image.sh /absolute/path/to/AvaotaOS-kiosk.img
 ```
 
-镜像检查以只读方式验证 FAT/ext4、MBR/BootROM 校验和、内核沙盒能力、App 动态库与包状态，以及 kiosk 服务、自定义用户、输入法和音频配置。应用运行其现有 Linux 普通窗口、低延迟全屏 QtTest，以及新增异步保存退出信号测试。静态镜像检查和 Xvfb 测试不能替代以下实机验收：
+镜像检查以只读方式验证 FAT/ext4、MBR/BootROM 校验和、内核沙盒能力、App 动态库与包状态，以及 kiosk 服务、自定义用户、输入法和音频配置；同时验证 [OTG 串口登录](otg-serial.md)所需内核选项、脚本和开机服务。应用运行其现有 Linux 普通窗口、低延迟全屏 QtTest，以及新增异步保存退出信号测试。静态镜像检查和 Xvfb 测试不能替代以下实机验收：
 
 - 冷启动直接进入 App；断网仍能进入本地画板；SSH、apt、USB、串口正常。
 - 画笔、撤销、存取、HTML/WebGL、截图、文件选择、中文输入、F11/Escape 与弹窗焦点。

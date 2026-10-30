@@ -146,6 +146,10 @@ setup_wifi(){
     :
 }
 
+setup_otg(){
+    :
+}
+
 setup_boot(){
     :
 }
@@ -236,6 +240,7 @@ EOF
     # Apply board settings even when reusing a cached rootfs archive.
     ROOTFS="${workspace}/rootfs_dir" setup_display
     ROOTFS="${workspace}/rootfs_dir" setup_wifi
+    ROOTFS="${workspace}/rootfs_dir" setup_otg
     ROOTFS="${workspace}/rootfs_dir" setup_boot
     if [[ $TYPE == kiosk ]]; then
         install_kiosk_session "${workspace}/rootfs_dir" "${workspace}/.."
